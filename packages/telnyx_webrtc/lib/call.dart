@@ -388,6 +388,13 @@ class Call {
     if (callId != null) {
       _txClient.latencyTracker.cancelCallTracking(callId!);
     }
+
+    // Let CallManager handle multi-call cleanup (auto-unhold held calls).
+    // This mirrors Android's EndCurrentAndUnholdLast.
+    if (callId != null) {
+      _txClient.callManager.endCurrentAndUnholdLast(callId!);
+    }
+
     final message = TelnyxMessage(
       socketMethod: SocketMethod.bye,
       message: ReceivedMessage(method: 'telnyx_rtc.bye'),
