@@ -894,7 +894,9 @@ class TelnyxClient {
       loginParams: {'decline_push': 'true'},
       sessionId: sessid,
       userVariables: notificationParams,
-      userAgent: VersionUtils.getUserAgent(),
+      userAgent: VersionUtils.getUserAgent(
+        enableMissedCallNotifications: config.enableMissedCallNotifications,
+      ),
     );
     final loginMessage = LoginMessage(
       id: uuid,
@@ -936,7 +938,9 @@ class TelnyxClient {
       loginParams: {'decline_push': 'true'},
       userVariables: notificationParams,
       sessionId: sessid,
-      userAgent: VersionUtils.getUserAgent(),
+      userAgent: VersionUtils.getUserAgent(
+        enableMissedCallNotifications: config.enableMissedCallNotifications,
+      ),
     );
     final loginMessage = LoginMessage(
       id: uuid,
@@ -1360,7 +1364,9 @@ class TelnyxClient {
       loginParams: {'attach_call': 'true'},
       sessionId: sessid,
       userVariables: notificationParams,
-      userAgent: VersionUtils.getUserAgent(),
+      userAgent: VersionUtils.getUserAgent(
+        enableMissedCallNotifications: config.enableMissedCallNotifications,
+      ),
     );
     final loginMessage = LoginMessage(
       id: uuid,
@@ -1417,7 +1423,9 @@ class TelnyxClient {
       loginParams: {'attach_call': 'true'},
       userVariables: notificationParams,
       sessionId: sessid,
-      userAgent: VersionUtils.getUserAgent(),
+      userAgent: VersionUtils.getUserAgent(
+        enableMissedCallNotifications: config.enableMissedCallNotifications,
+      ),
     );
     final loginMessage = LoginMessage(
       id: uuid,
@@ -1843,6 +1851,8 @@ class TelnyxClient {
           sipCallerIDName: tokenConfig.sipCallerIDName,
           sipCallerIDNumber: tokenConfig.sipCallerIDNumber,
           notificationToken: tokenConfig.notificationToken,
+          enableMissedCallNotifications:
+              tokenConfig.enableMissedCallNotifications,
           region: Region.auto,
           // Force auto region for fallback
           fallbackOnRegionFailure: tokenConfig.fallbackOnRegionFailure,
@@ -1864,6 +1874,8 @@ class TelnyxClient {
           sipCallerIDName: credConfig.sipCallerIDName,
           sipCallerIDNumber: credConfig.sipCallerIDNumber,
           notificationToken: credConfig.notificationToken,
+          enableMissedCallNotifications:
+              credConfig.enableMissedCallNotifications,
           region: Region.auto,
           // Force auto region for fallback
           fallbackOnRegionFailure: credConfig.fallbackOnRegionFailure,

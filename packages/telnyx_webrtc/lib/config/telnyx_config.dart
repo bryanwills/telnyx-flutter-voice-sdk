@@ -22,6 +22,7 @@ class Config {
     this.region = Region.auto,
     this.fallbackOnRegionFailure = true,
     this.forceRelayCandidate = false,
+    this.enableMissedCallNotifications = false,
     this.iceServers,
     this.serverConfiguration,
     this.callReportInterval = 5000,
@@ -79,6 +80,12 @@ class Config {
   /// - Important: This setting is disabled by default to maintain optimal call quality.
   final bool forceRelayCandidate;
 
+  /// Controls whether iOS missed call notifications are enabled for this registration.
+  ///
+  /// When enabled, the SDK sends a missed-call notification opt-in user agent
+  /// during login. Defaults to false.
+  final bool enableMissedCallNotifications;
+
   /// Custom ICE servers for WebRTC peer connections.
   ///
   /// When provided, these ICE servers will be used instead of the default
@@ -131,6 +138,7 @@ class Config {
 /// [customLogger] is a custom logger to use for logging - if left null the default logger will be used which uses the Logger package
 /// [pushAnswerTimeout] is the timeout in milliseconds to wait for INVITE after accepting from push notification (default: 10000ms)
 /// [forceRelayCandidate] controls whether the SDK should force TURN relay for peer connections (default: false)
+/// [enableMissedCallNotifications] controls whether iOS missed call notifications are enabled (default: false)
 /// [iceServers] custom ICE servers for WebRTC peer connections
 /// [serverConfiguration] server configuration for signaling and ICE servers
 class CredentialConfig extends Config {
@@ -147,6 +155,7 @@ class CredentialConfig extends Config {
   /// [ringbackPath] is the path to the ringback file (audio to play when calling)
   /// [customLogger] is a custom logger to use for logging - if left null the default logger will be used which uses the Logger package
   /// [pushAnswerTimeout] is the timeout in milliseconds to wait for INVITE after accepting from push notification (default: 10000ms)
+  /// [enableMissedCallNotifications] controls whether iOS missed call notifications are enabled (default: false)
   /// [iceServers] custom ICE servers for WebRTC peer connections
   /// [serverConfiguration] server configuration for signaling and ICE servers
   CredentialConfig({
@@ -166,6 +175,7 @@ class CredentialConfig extends Config {
     super.region = Region.auto,
     super.fallbackOnRegionFailure = true,
     super.forceRelayCandidate = false,
+    super.enableMissedCallNotifications = false,
     super.iceServers,
     super.serverConfiguration,
     super.callReportInterval = 5000,
@@ -194,6 +204,7 @@ class CredentialConfig extends Config {
 /// [customLogger] is a custom logger to use for logging - if left null the default logger will be used which uses the Logger package
 /// [pushAnswerTimeout] is the timeout in milliseconds to wait for INVITE after accepting from push notification (default: 10000ms)
 /// [forceRelayCandidate] controls whether the SDK should force TURN relay for peer connections (default: false)
+/// [enableMissedCallNotifications] controls whether iOS missed call notifications are enabled (default: false)
 /// [iceServers] custom ICE servers for WebRTC peer connections
 /// [serverConfiguration] server configuration for signaling and ICE servers
 class TokenConfig extends Config {
@@ -210,6 +221,7 @@ class TokenConfig extends Config {
   /// [ringbackPath] is the path to the ringback file (audio to play when calling)
   /// [customLogger] is a custom logger to use for logging - if left null the default logger will be used which uses the Logger package
   /// [pushAnswerTimeout] is the timeout in milliseconds to wait for INVITE after accepting from push notification (default: 10000ms)
+  /// [enableMissedCallNotifications] controls whether iOS missed call notifications are enabled (default: false)
   /// [iceServers] custom ICE servers for WebRTC peer connections
   /// [serverConfiguration] server configuration for signaling and ICE servers
   TokenConfig({
@@ -228,6 +240,7 @@ class TokenConfig extends Config {
     super.region = Region.auto,
     super.fallbackOnRegionFailure = true,
     super.forceRelayCandidate = false,
+    super.enableMissedCallNotifications = false,
     super.iceServers,
     super.serverConfiguration,
     super.callReportInterval = 5000,
