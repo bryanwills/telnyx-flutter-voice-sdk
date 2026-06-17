@@ -13,6 +13,7 @@ import 'package:telnyx_flutter_webrtc/service/call_history_service.dart';
 import 'package:telnyx_flutter_webrtc/utils/background_detector.dart';
 import 'package:telnyx_flutter_webrtc/utils/theme.dart';
 import 'package:telnyx_webrtc/call.dart';
+import 'package:telnyx_webrtc/call_manager.dart';
 import 'package:telnyx_webrtc/config/telnyx_config.dart';
 import 'package:telnyx_webrtc/model/call_termination_reason.dart';
 import 'package:telnyx_webrtc/model/socket_method.dart';
@@ -176,6 +177,16 @@ class TelnyxClientViewModel with ChangeNotifier {
   Call? get currentCall {
     return _telnyxClient.calls.values.firstOrNull;
   }
+
+  /// The CallManager instance from the TelnyxClient.
+  /// Use this to query multi-call state (hasActiveCall, heldCalls, etc.).
+  CallManager get callManager => _telnyxClient.callManager;
+
+  /// Whether there is an active call that would conflict with accepting a new one.
+  bool get hasActiveCall => _telnyxClient.callManager.hasActiveCall;
+
+  /// The list of calls currently on hold.
+  List<Call> get heldCalls => _telnyxClient.callManager.heldCalls;
 
   IncomingInviteParams? get incomingInvitation {
     return _incomingInvite;
@@ -470,7 +481,7 @@ class TelnyxClientViewModel with ChangeNotifier {
           case SocketMethod.invite:
             {
               logger.i(
-                'ObserveResponses :: Received INVITE. callFromPush: $callFromPush, waitingForInvite: $waitingForInvite',
+                'ObserveResponses :: Received INVITE. callFromPush: $callFromPush, waitingForInvite: $waitingForInvite, hasActiveCall: ${_telnyxClient.callManager.hasActiveCall}',
               );
               _incomingInvite = message.message.inviteParams;
 
@@ -566,7 +577,27 @@ class TelnyxClientViewModel with ChangeNotifier {
                 );
               }
 
-              callState = CallStateStatus.idle;
+              // Check if there's a held call being auto-restored by CallManager
+              final restoredCall = _telnyxClient.callManager.currentCall;
+              if (restoredCall != null && restoredCall.callState == CallState.active) {
+                // A held call was auto-unheld — switch to it instead of going idle
+                logger.i(
+                  'TxClientViewModel :: BYE received, but CallManager auto-restored held call ${restoredCall.callId}. Staying in ongoingCall state.',
+                );
+                _currentCall = restoredCall;
+                _hold = false;
+                callState = CallStateStatus.ongoingCall;
+                observeCurrentCall();
+
+                // Update call tracking for the restored call
+                _currentCallDestination = restoredCall.sessionDestinationNumber.isNotEmpty
+                    ? restoredCall.sessionDestinationNumber
+                    : restoredCall.sessionCallerNumber;
+                _currentCallDirection = CallDirection.incoming; // best guess
+              } else {
+                // No held call to restore — go idle as before
+                callState = CallStateStatus.idle;
+              }
 
               // Handle CallKit cleanup
               if (!kIsWeb && Platform.isIOS) {
@@ -602,8 +633,10 @@ class TelnyxClientViewModel with ChangeNotifier {
                 }
               }
 
-              // Call resetCallInfo() once at the end, after termination reason is set
-              resetCallInfo();
+              // Only fully reset if no calls remain
+              if (_telnyxClient.calls.isEmpty) {
+                resetCallInfo();
+              }
               break;
             }
           case SocketMethod.aiConversation:
@@ -1026,6 +1059,149 @@ class TelnyxClientViewModel with ChangeNotifier {
       waitingForInvite = false;
       notifyListeners();
     }
+  }
+
+  /// Accepts an incoming call by putting the current active call on hold.
+  ///
+  /// Use this when the user wants to hold the current call and answer the
+  /// incoming call. If there is no active call, this falls back to a normal
+  /// accept.
+  Future<void> holdCurrentAndAcceptIncoming() async {
+    if (_incomingInvite == null) {
+      logger.w('holdCurrentAndAcceptIncoming: No incoming invite');
+      return;
+    }
+
+    logger.i(
+      'TelnyxClientViewModel.holdCurrentAndAcceptIncoming: Holding current call and accepting incoming ${_incomingInvite!.callID}',
+    );
+
+    // Set state before async gaps
+    callState = CallStateStatus.connectingToCall;
+    waitingForInvite = false;
+    notifyListeners();
+
+    try {
+      _currentCall = _telnyxClient.holdCurrentAndAcceptIncoming(
+        _incomingInvite!.callID!,
+        _incomingInvite!,
+        _localName,
+        _localNumber,
+        'State',
+        customHeaders: {},
+        audioConstraints: _audioConstraints,
+        debug: true,
+        useTrickleIce: _useTrickleIce,
+        mutedMicOnStart: _mutedMicOnStart,
+      );
+
+      observeCurrentCall();
+
+      if (_mutedMicOnStart) {
+        _mute = true;
+        notifyListeners();
+      }
+
+      // Hide incoming call notification on Android
+      if (!kIsWeb && Platform.isAndroid) {
+        final CallKitParams callKitParams = CallKitParams(
+          id: _incomingInvite!.callID,
+          nameCaller: _incomingInvite!.callerIdName,
+          handle: _incomingInvite!.callerIdNumber,
+          appName: 'Telnyx Flutter Voice',
+          type: 0,
+        );
+        try {
+          await FlutterCallkitIncoming.hideCallkitIncoming(callKitParams);
+        } catch (e) {
+          logger.e('holdCurrentAndAcceptIncoming :: Error hiding CallKit UI: $e');
+        }
+      }
+    } catch (e) {
+      logger.e('Error during holdCurrentAndAcceptIncoming: $e');
+      callState = CallStateStatus.idle;
+      notifyListeners();
+    }
+  }
+
+  /// Accepts an incoming call by ending the current active call.
+  ///
+  /// Use this when the user wants to hang up the current call and answer the
+  /// incoming call. If there is no active call, this falls back to a normal
+  /// accept.
+  Future<void> endCurrentAndAcceptIncoming() async {
+    if (_incomingInvite == null) {
+      logger.w('endCurrentAndAcceptIncoming: No incoming invite');
+      return;
+    }
+
+    logger.i(
+      'TelnyxClientViewModel.endCurrentAndAcceptIncoming: Ending current call and accepting incoming ${_incomingInvite!.callID}',
+    );
+
+    // Set state before async gaps
+    callState = CallStateStatus.connectingToCall;
+    waitingForInvite = false;
+    notifyListeners();
+
+    try {
+      _currentCall = _telnyxClient.endCurrentAndAcceptIncoming(
+        _incomingInvite!.callID!,
+        _incomingInvite!,
+        _localName,
+        _localNumber,
+        'State',
+        customHeaders: {},
+        audioConstraints: _audioConstraints,
+        debug: true,
+        useTrickleIce: _useTrickleIce,
+        mutedMicOnStart: _mutedMicOnStart,
+      );
+
+      observeCurrentCall();
+
+      if (_mutedMicOnStart) {
+        _mute = true;
+        notifyListeners();
+      }
+
+      // Hide incoming call notification on Android
+      if (!kIsWeb && Platform.isAndroid) {
+        final CallKitParams callKitParams = CallKitParams(
+          id: _incomingInvite!.callID,
+          nameCaller: _incomingInvite!.callerIdName,
+          handle: _incomingInvite!.callerIdNumber,
+          appName: 'Telnyx Flutter Voice',
+          type: 0,
+        );
+        try {
+          await FlutterCallkitIncoming.hideCallkitIncoming(callKitParams);
+        } catch (e) {
+          logger.e('endCurrentAndAcceptIncoming :: Error hiding CallKit UI: $e');
+        }
+      }
+    } catch (e) {
+      logger.e('Error during endCurrentAndAcceptIncoming: $e');
+      callState = CallStateStatus.idle;
+      notifyListeners();
+    }
+  }
+
+  /// Rejects the incoming call without affecting the current active call.
+  void rejectIncomingCall() {
+    if (_incomingInvite == null) {
+      logger.w('rejectIncomingCall: No incoming invite');
+      return;
+    }
+
+    logger.i(
+      'TelnyxClientViewModel.rejectIncomingCall: Rejecting incoming call ${_incomingInvite!.callID}',
+    );
+
+    _telnyxClient.rejectCall(_incomingInvite!.callID!);
+    _incomingInvite = null;
+    callState = CallStateStatus.ongoingCall; // Still in the original call
+    notifyListeners();
   }
 
   void endCall({bool endfromCallScreen = false}) {
