@@ -1261,7 +1261,30 @@ class TelnyxClientViewModel with ChangeNotifier {
       currentCall?.endCall();
     }
 
-    _callState = CallStateStatus.idle;
+    // After ending the current call, check if CallManager auto-restored a held call.
+    // If so, stay in ongoingCall state instead of going idle.
+    final restoredCall = _telnyxClient.callManager.currentCall;
+    if (restoredCall != null &&
+        restoredCall.callState != CallState.done &&
+        restoredCall.callState != CallState.error) {
+      logger.i(
+        'endCall: CallManager restored held call ${restoredCall.callId}. Staying in ongoingCall.',
+      );
+      _currentCall = restoredCall;
+      _hold = false;
+      _callState = CallStateStatus.ongoingCall;
+      _currentCallDestination =
+          restoredCall.sessionDestinationNumber.isNotEmpty
+              ? restoredCall.sessionDestinationNumber
+              : restoredCall.sessionCallerNumber;
+      _currentCallDirection = CallDirection.incoming; // best guess
+      observeCurrentCall();
+    } else if (_telnyxClient.calls.isEmpty) {
+      _callState = CallStateStatus.idle;
+    } else {
+      // Edge case: calls map not empty but no currentCall
+      _callState = CallStateStatus.idle;
+    }
     notifyListeners();
   }
 
