@@ -58,6 +58,7 @@ class TelnyxClientViewModel with ChangeNotifier {
   bool _isAssistantMode = false;
   bool _useTrickleIce = false;
   bool _mutedMicOnStart = false;
+  bool _isSwappingCalls = false; // true during hold+accept or end+accept to prevent state flapping
   List<AudioCodec> _supportedCodecs = [];
   List<AudioCodec> _preferredCodecs = [];
   AudioConstraints _audioConstraints = AudioConstraints.enabled();
@@ -175,7 +176,10 @@ class TelnyxClientViewModel with ChangeNotifier {
   Call? _currentCall;
 
   Call? get currentCall {
-    return _telnyxClient.calls.values.firstOrNull;
+    // Prefer the CallManager-tracked current call for multi-call correctness.
+    // Fall back to the raw calls map for single-call scenarios.
+    return _telnyxClient.callManager.currentCall ??
+        _telnyxClient.calls.values.firstOrNull;
   }
 
   /// The CallManager instance from the TelnyxClient.
@@ -321,7 +325,9 @@ class TelnyxClientViewModel with ChangeNotifier {
           break;
         case CallState.connecting:
           logger.i('Connecting');
-          _callState = CallStateStatus.connectingToCall;
+          if (!_isSwappingCalls) {
+            _callState = CallStateStatus.connectingToCall;
+          }
           notifyListeners();
           break;
         case CallState.ringing:
@@ -329,13 +335,16 @@ class TelnyxClientViewModel with ChangeNotifier {
             // Ringing state as a result of an invitation after a push notification reaction - ignore invitation as we should be connecting and auto answering
             return;
           }
-          _callState = CallStateStatus.ongoingInvitation;
+          if (!_isSwappingCalls) {
+            _callState = CallStateStatus.ongoingInvitation;
+          }
           notifyListeners();
           break;
         case CallState.active:
           logger.i(
             'TelnyxClientViewModel.observeCurrentCall: Current call is Active. Call ID: ${currentCall?.callId}',
           );
+          _isSwappingCalls = false; // Swap complete, clear the flag
           if (!kIsWeb && Platform.isIOS) {
             final String? callKitKnownUuid =
                 _incomingInvite?.callID ?? currentCall?.callId;
@@ -359,6 +368,7 @@ class TelnyxClientViewModel with ChangeNotifier {
           break;
         case CallState.done:
           logger.i('Call done : ${state.terminationReason}');
+          _isSwappingCalls = false;
 
           // Store the termination reason for display
           _lastTerminationReason = state.terminationReason;
@@ -545,6 +555,15 @@ class TelnyxClientViewModel with ChangeNotifier {
                 'TxClientViewModel :: observeResponses :: Received BYE message: ${message.message}',
               );
 
+              // Identify which call ended via byeParams.callID
+              final byeCallId = message.message.byeParams?.callID;
+              final bool isCurrentCall = byeCallId != null &&
+                  byeCallId == currentCall?.callId;
+
+              logger.i(
+                'TxClientViewModel :: BYE for callId: $byeCallId, isCurrentCall: $isCurrentCall, remaining calls: ${_telnyxClient.calls.length}',
+              );
+
               // Extract termination reason from BYE message if available
               CallTerminationReason? terminationReason;
               if (message.message.byeParams != null) {
@@ -566,7 +585,7 @@ class TelnyxClientViewModel with ChangeNotifier {
                 }
               }
 
-              // Save call to history before resetting call info
+              // Save call to history
               if (_currentCallDestination != null &&
                   _currentCallDirection != null) {
                 final wasAnswered = _callState == CallStateStatus.ongoingCall;
@@ -577,64 +596,66 @@ class TelnyxClientViewModel with ChangeNotifier {
                 );
               }
 
-              // Check if there's a held call being auto-restored by CallManager
-              final restoredCall = _telnyxClient.callManager.currentCall;
-              if (restoredCall != null && restoredCall.callState == CallState.active) {
-                // A held call was auto-unheld — switch to it instead of going idle
-                logger.i(
-                  'TxClientViewModel :: BYE received, but CallManager auto-restored held call ${restoredCall.callId}. Staying in ongoingCall state.',
-                );
-                _currentCall = restoredCall;
-                _hold = false;
-                callState = CallStateStatus.ongoingCall;
-                observeCurrentCall();
-
-                // Update call tracking for the restored call
-                _currentCallDestination = restoredCall.sessionDestinationNumber.isNotEmpty
-                    ? restoredCall.sessionDestinationNumber
-                    : restoredCall.sessionCallerNumber;
-                _currentCallDirection = CallDirection.incoming; // best guess
-              } else {
-                // No held call to restore — go idle as before
-                callState = CallStateStatus.idle;
+              // End the specific CallKit call for the BYE'd call
+              if (!kIsWeb && byeCallId != null) {
+                try {
+                  await FlutterCallkitIncoming.endCall(byeCallId);
+                } catch (e) {
+                  logger.w('Failed to end CallKit call $byeCallId: $e');
+                }
               }
 
-              // Handle CallKit cleanup
-              if (!kIsWeb && Platform.isIOS) {
-                if (callFromPush) {
-                  // For iOS push calls, handle CallKit cleanup but avoid double resetCallInfo()
-                  await FlutterCallkitIncoming.endCall(
-                    currentCall?.callId ?? _incomingInvite!.callID!,
+              // Check remaining calls AFTER the SDK has already processed the BYE
+              // (the SDK removes the call from calls map and calls
+              // callManager.onByeReceived before this event reaches us)
+              if (_telnyxClient.calls.isNotEmpty) {
+                // There are still active calls — don't go idle
+                final remainingCurrent =
+                    _telnyxClient.callManager.currentCall;
+                if (remainingCurrent != null) {
+                  logger.i(
+                    'TxClientViewModel :: BYE for $byeCallId, switching to remaining call ${remainingCurrent.callId}',
                   );
-                  if (WidgetsBinding.instance.lifecycleState !=
-                      AppLifecycleState.resumed) {
-                    _telnyxClient.disconnect();
-                  }
-                }
-              }
+                  _currentCall = remainingCurrent;
+                  _hold = false;
+                  callState = CallStateStatus.ongoingCall;
+                  observeCurrentCall();
 
-              // End Call via Flutter Callkit Incoming regardless of Platform:
-              if (currentCall?.callId != null || _incomingInvite != null) {
-                // end Call for Callkit on iOS
-                await FlutterCallkitIncoming.endCall(
-                  currentCall?.callId ?? _incomingInvite?.callID! ?? '',
-                );
+                  // Update call tracking for the now-current call
+                  _currentCallDestination =
+                      remainingCurrent.sessionDestinationNumber.isNotEmpty
+                          ? remainingCurrent.sessionDestinationNumber
+                          : remainingCurrent.sessionCallerNumber;
+                  _currentCallDirection = CallDirection.incoming; // best guess
+                } else {
+                  // Calls exist in the map but no currentCall from CallManager
+                  // This shouldn't normally happen, but handle gracefully
+                  logger.w(
+                    'TxClientViewModel :: BYE for $byeCallId, calls remain but no currentCall from CallManager',
+                  );
+                  callState = CallStateStatus.idle;
+                  resetCallInfo();
+                }
               } else {
-                final numCalls = await FlutterCallkitIncoming.activeCalls();
-                if (numCalls.isNotEmpty) {
-                  final String? callKitId = numCalls.first['id'] as String?;
-                  if (callKitId != null && callKitId.isNotEmpty) {
-                    await FlutterCallkitIncoming.endCall(callKitId);
-                  } else {
-                    logger.w(
-                      'Could not find call ID in active CallKit calls map.',
+                // No calls remain — go idle
+                logger.i(
+                  'TxClientViewModel :: BYE for $byeCallId, no remaining calls. Going idle.',
+                );
+                callState = CallStateStatus.idle;
+
+                // Handle iOS push-specific cleanup
+                if (!kIsWeb && Platform.isIOS) {
+                  if (callFromPush) {
+                    await FlutterCallkitIncoming.endCall(
+                      _incomingInvite?.callID ?? '',
                     );
+                    if (WidgetsBinding.instance.lifecycleState !=
+                        AppLifecycleState.resumed) {
+                      _telnyxClient.disconnect();
+                    }
                   }
                 }
-              }
 
-              // Only fully reset if no calls remain
-              if (_telnyxClient.calls.isEmpty) {
                 resetCallInfo();
               }
               break;
@@ -1076,10 +1097,10 @@ class TelnyxClientViewModel with ChangeNotifier {
       'TelnyxClientViewModel.holdCurrentAndAcceptIncoming: Holding current call and accepting incoming ${_incomingInvite!.callID}',
     );
 
-    // Set state before async gaps
-    callState = CallStateStatus.connectingToCall;
+    // Don't set connectingToCall — we still have an active call context.
+    // The new call will transition through ringing → active via observeCurrentCall().
     waitingForInvite = false;
-    notifyListeners();
+    _isSwappingCalls = true;
 
     try {
       _currentCall = _telnyxClient.holdCurrentAndAcceptIncoming(
@@ -1095,7 +1116,13 @@ class TelnyxClientViewModel with ChangeNotifier {
         mutedMicOnStart: _mutedMicOnStart,
       );
 
+      // The new call may briefly be in ringing/connecting state, but we should
+      // show the ongoing call UI (hold button, etc.) rather than a spinner.
+      // The observeCurrentCall callback will transition to ongoingCall once active.
+      callState = CallStateStatus.ongoingCall;
+      _hold = false; // We're now on the new call, not held
       observeCurrentCall();
+      notifyListeners();
 
       if (_mutedMicOnStart) {
         _mute = true;
@@ -1119,6 +1146,7 @@ class TelnyxClientViewModel with ChangeNotifier {
       }
     } catch (e) {
       logger.e('Error during holdCurrentAndAcceptIncoming: $e');
+      _isSwappingCalls = false;
       callState = CallStateStatus.idle;
       notifyListeners();
     }
@@ -1139,10 +1167,9 @@ class TelnyxClientViewModel with ChangeNotifier {
       'TelnyxClientViewModel.endCurrentAndAcceptIncoming: Ending current call and accepting incoming ${_incomingInvite!.callID}',
     );
 
-    // Set state before async gaps
-    callState = CallStateStatus.connectingToCall;
+    // Don't set connectingToCall — we're swapping calls, not waiting for initial connection.
     waitingForInvite = false;
-    notifyListeners();
+    _isSwappingCalls = true;
 
     try {
       _currentCall = _telnyxClient.endCurrentAndAcceptIncoming(
@@ -1158,7 +1185,12 @@ class TelnyxClientViewModel with ChangeNotifier {
         mutedMicOnStart: _mutedMicOnStart,
       );
 
+      // The new call should transition through ringing → active via observeCurrentCall().
+      // Show ongoing call UI immediately (not spinner).
+      callState = CallStateStatus.ongoingCall;
+      _hold = false;
       observeCurrentCall();
+      notifyListeners();
 
       if (_mutedMicOnStart) {
         _mute = true;
@@ -1182,6 +1214,7 @@ class TelnyxClientViewModel with ChangeNotifier {
       }
     } catch (e) {
       logger.e('Error during endCurrentAndAcceptIncoming: $e');
+      _isSwappingCalls = false;
       callState = CallStateStatus.idle;
       notifyListeners();
     }

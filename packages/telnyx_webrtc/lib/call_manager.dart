@@ -24,6 +24,7 @@ import 'package:telnyx_webrtc/utils/logging/global_logger.dart';
 class CallManager {
   Call? _currentCall;
   final List<Call> _heldCalls = [];
+  bool _suppressAutoUnhold = false;
 
   final _currentCallController = StreamController<Call?>.broadcast();
   final _heldCallsController = StreamController<List<Call>>.broadcast();
@@ -139,12 +140,21 @@ class CallManager {
     required void Function(String callId) endCall,
     required Call Function(String callId) acceptCall,
   }) {
-    if (_currentCall != null) {
+    final currentCallId = _currentCall?.callId;
+    if (currentCallId != null) {
       GlobalLogger().i(
-        'CallManager: Ending current call ${_currentCall!.callId} before accepting incoming $incomingCallId',
+        'CallManager: Ending current call $currentCallId before accepting incoming $incomingCallId',
       );
-      endCall(_currentCall!.callId!);
-      unregisterCall(_currentCall!.callId);
+      // Suppress auto-unhold: we're about to accept a new call, so we don't
+      // want endCurrentAndUnholdLast (called inside endCall) to unhold a
+      // held call — we'll keep held calls as-is and set the new call as current.
+      _suppressAutoUnhold = true;
+      try {
+        unregisterCall(currentCallId);
+        endCall(currentCallId);
+      } finally {
+        _suppressAutoUnhold = false;
+      }
     }
 
     final acceptedCall = acceptCall(incomingCallId);
@@ -157,8 +167,18 @@ class CallManager {
   /// one and makes it the new [currentCall].
   ///
   /// This mirrors `EndCurrentAndUnholdLast` in the Android SDK.
+  ///
+  /// When [_suppressAutoUnhold] is true (set during call-swap operations),
+  /// held calls are NOT auto-unholded — the caller manages the transition.
   void endCurrentAndUnholdLast(String callId) {
     unregisterCall(callId);
+
+    if (_suppressAutoUnhold) {
+      GlobalLogger().i(
+        'CallManager: Auto-unhold suppressed for $callId (call swap in progress)',
+      );
+      return;
+    }
 
     final lastHeld = getLastHeldCall();
     if (lastHeld != null) {
