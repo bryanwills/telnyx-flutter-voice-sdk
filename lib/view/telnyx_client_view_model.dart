@@ -605,39 +605,53 @@ class TelnyxClientViewModel with ChangeNotifier {
                 }
               }
 
-              // Check remaining calls AFTER the SDK has already processed the BYE
-              // (the SDK removes the call from calls map and calls
-              // callManager.onByeReceived before this event reaches us)
-              if (_telnyxClient.calls.isNotEmpty) {
-                // There are still active calls — don't go idle
-                final remainingCurrent =
-                    _telnyxClient.callManager.currentCall;
-                if (remainingCurrent != null) {
-                  logger.i(
-                    'TxClientViewModel :: BYE for $byeCallId, switching to remaining call ${remainingCurrent.callId}',
-                  );
-                  _currentCall = remainingCurrent;
-                  _hold = false;
-                  callState = CallStateStatus.ongoingCall;
-                  observeCurrentCall();
+              // NOTE: The SDK fires onSocketMessageReceived BEFORE it removes
+              // the call from the calls map and calls callManager.onByeReceived.
+              // So we must exclude the BYE'd call when checking for remaining calls.
+              final remainingCalls = _telnyxClient.calls.values
+                  .where((c) => c.callId != byeCallId)
+                  .toList();
 
-                  // Update call tracking for the now-current call
-                  _currentCallDestination =
-                      remainingCurrent.sessionDestinationNumber.isNotEmpty
-                          ? remainingCurrent.sessionDestinationNumber
-                          : remainingCurrent.sessionCallerNumber;
-                  _currentCallDirection = CallDirection.incoming; // best guess
-                } else {
-                  // Calls exist in the map but no currentCall from CallManager
-                  // This shouldn't normally happen, but handle gracefully
-                  logger.w(
-                    'TxClientViewModel :: BYE for $byeCallId, calls remain but no currentCall from CallManager',
-                  );
-                  callState = CallStateStatus.idle;
-                  resetCallInfo();
+              if (remainingCalls.isNotEmpty) {
+                // There are still other active calls — don't go idle.
+                // Try to find the current call from CallManager, but skip the
+                // BYE'd call (CallManager hasn't processed the BYE yet either).
+                var remainingCurrent = _telnyxClient.callManager.currentCall;
+                if (remainingCurrent == null ||
+                    remainingCurrent.callId == byeCallId) {
+                  // CallManager still points to the BYE'd call — look for a
+                  // held call or any other remaining call.
+                  remainingCurrent =
+                      _telnyxClient.callManager.getLastHeldCall() ??
+                          remainingCalls.first;
                 }
+                logger.i(
+                  'TxClientViewModel :: BYE for $byeCallId, switching to remaining call ${remainingCurrent.callId}',
+                );
+                _currentCall = remainingCurrent;
+                _hold = false;
+
+                // Unhold the remaining call if it's currently held.
+                // (The SDK's callManager.onByeReceived will also do this,
+                // but it runs after our handler, so we do it proactively.)
+                if (remainingCurrent.callState == CallState.held) {
+                  logger.i(
+                    'TxClientViewModel :: Unholding remaining call ${remainingCurrent.callId}',
+                  );
+                  remainingCurrent.onHoldUnholdPressed();
+                }
+
+                callState = CallStateStatus.ongoingCall;
+                observeCurrentCall();
+
+                // Update call tracking for the now-current call
+                _currentCallDestination =
+                    remainingCurrent.sessionDestinationNumber.isNotEmpty
+                        ? remainingCurrent.sessionDestinationNumber
+                        : remainingCurrent.sessionCallerNumber;
+                _currentCallDirection = CallDirection.incoming; // best guess
               } else {
-                // No calls remain — go idle
+                // No other calls remain — go idle
                 logger.i(
                   'TxClientViewModel :: BYE for $byeCallId, no remaining calls. Going idle.',
                 );
