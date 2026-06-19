@@ -82,7 +82,7 @@ class CallHandler {
   void changeState(CallState state) {
     call?.callState = state;
     onCallStateChanged(state);
-    
+
     // Post call report when call ends (regardless of who initiated the BYE)
     // Also post on dropped state (network loss) — matches iOS behaviour
     // Use unawaited - don't block state change on stats/network operations
@@ -401,7 +401,7 @@ class Call {
     );
     _txClient.onSocketMessageReceived.call(message);
   }
-  
+
   /// Stops stats collection and posts the call report to voice-sdk-proxy.
   /// Called automatically when call state transitions to DONE (via CallHandler).
   /// This handles both local hangup (endCall) and remote hangup (BYE received).
@@ -409,10 +409,10 @@ class Call {
     if (peerConnection == null || callId == null) {
       return;
     }
-    
+
     // Stop stats collection - await to ensure final stats are captured
     await peerConnection!.stopStats(callId!);
-    
+
     // Determine direction based on whether we have a destination number
     // If sessionDestinationNumber is set, it's an outbound call
     // If sessionCallerNumber is set but not destination, it's likely inbound
