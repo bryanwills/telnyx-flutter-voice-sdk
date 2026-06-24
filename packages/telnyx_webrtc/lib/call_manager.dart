@@ -26,6 +26,16 @@ class CallManager {
   final List<Call> _heldCalls = [];
   bool _suppressAutoUnhold = false;
 
+  /// Tracks callIds that have already been wired up via [registerCall].
+  ///
+  /// The same `Call` object can flow through both the invite handler and
+  /// `acceptCall` (the incoming invite handler registers the freshly created
+  /// `offerCall`, and `acceptCall` reuses the same object via
+  /// `getCallOrNull(...)`). Without an idempotency guard, repeated
+  /// [registerCall] calls would wrap `callHandler.onCallStateChanged` multiple
+  /// times and `_onCallStateChanged` would fire N times per state transition.
+  final Set<String?> _registeredCallIds = <String?>{};
+
   final _currentCallController = StreamController<Call?>.broadcast();
   final _heldCallsController = StreamController<List<Call>>.broadcast();
 
@@ -67,7 +77,23 @@ class CallManager {
   /// When the call transitions to held it is added to [heldCalls]; when it
   /// transitions away from held it is removed. This mirrors the
   /// `registerCall` / hold-status-observer pattern in the Android SDK.
+  ///
+  /// Idempotent: calling this multiple times for the same callId will only
+  /// wire up the state-change listener once. This is important because the
+  /// same `Call` object flows through both the invite handler (registered on
+  /// receive) and `acceptCall` (re-registered on accept); without this guard,
+  /// `onCallStateChanged` would be wrapped multiple times and
+  /// `_onCallStateChanged` would fire N times per state transition.
   void registerCall(Call call) {
+    final callId = call.callId;
+    if (_registeredCallIds.contains(callId)) {
+      GlobalLogger().d(
+        'CallManager.registerCall: callId=$callId already registered, skipping',
+      );
+      return;
+    }
+    _registeredCallIds.add(callId);
+
     // Listen for state changes. When the call transitions to/from held we
     // update the held-calls list.
     // We attach a listener via the existing CallHandler callback chain by
@@ -85,6 +111,7 @@ class CallManager {
   void unregisterCall(String? callId) {
     if (callId == null) return;
 
+    _registeredCallIds.remove(callId);
     _heldCalls.removeWhere((c) => c.callId == callId);
     if (_currentCall?.callId == callId) {
       _currentCall = null;

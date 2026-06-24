@@ -1124,8 +1124,15 @@ class TelnyxClientViewModel with ChangeNotifier {
       return;
     }
 
+    // Capture the invite into a local before we clear `_incomingInvite` below.
+    // The Android hide-CallKit block reads fields off the invite after the
+    // null-out, which would otherwise throw a Null check operator error and
+    // trip the outer try/catch (flipping the UI to idle and leaving the
+    // incoming-call notification visible).
+    final incomingInvite = _incomingInvite!;
+
     logger.i(
-      'TelnyxClientViewModel.holdCurrentAndAcceptIncoming: Holding current call and accepting incoming ${_incomingInvite!.callID}',
+      'TelnyxClientViewModel.holdCurrentAndAcceptIncoming: Holding current call and accepting incoming ${incomingInvite.callID}',
     );
 
     // Don't set connectingToCall — we still have an active call context.
@@ -1135,8 +1142,8 @@ class TelnyxClientViewModel with ChangeNotifier {
 
     try {
       _currentCall = _telnyxClient.holdCurrentAndAcceptIncoming(
-        _incomingInvite!.callID!,
-        _incomingInvite!,
+        incomingInvite.callID!,
+        incomingInvite,
         _localName,
         _localNumber,
         'State',
@@ -1164,9 +1171,9 @@ class TelnyxClientViewModel with ChangeNotifier {
       // Hide incoming call notification on Android
       if (!kIsWeb && Platform.isAndroid) {
         final CallKitParams callKitParams = CallKitParams(
-          id: _incomingInvite!.callID,
-          nameCaller: _incomingInvite!.callerIdName,
-          handle: _incomingInvite!.callerIdNumber,
+          id: incomingInvite.callID,
+          nameCaller: incomingInvite.callerIdName,
+          handle: incomingInvite.callerIdNumber,
           appName: 'Telnyx Flutter Voice',
           type: 0,
         );
@@ -1197,8 +1204,15 @@ class TelnyxClientViewModel with ChangeNotifier {
       return;
     }
 
+    // Capture the invite into a local before we clear `_incomingInvite` below.
+    // The Android hide-CallKit block reads fields off the invite after the
+    // null-out, which would otherwise throw a Null check operator error and
+    // trip the outer try/catch (flipping the UI to idle and leaving the
+    // incoming-call notification visible).
+    final incomingInvite = _incomingInvite!;
+
     logger.i(
-      'TelnyxClientViewModel.endCurrentAndAcceptIncoming: Ending current call and accepting incoming ${_incomingInvite!.callID}',
+      'TelnyxClientViewModel.endCurrentAndAcceptIncoming: Ending current call and accepting incoming ${incomingInvite.callID}',
     );
 
     // Don't set connectingToCall — we're swapping calls, not waiting for initial connection.
@@ -1207,8 +1221,8 @@ class TelnyxClientViewModel with ChangeNotifier {
 
     try {
       _currentCall = _telnyxClient.endCurrentAndAcceptIncoming(
-        _incomingInvite!.callID!,
-        _incomingInvite!,
+        incomingInvite.callID!,
+        incomingInvite,
         _localName,
         _localNumber,
         'State',
@@ -1235,9 +1249,9 @@ class TelnyxClientViewModel with ChangeNotifier {
       // Hide incoming call notification on Android
       if (!kIsWeb && Platform.isAndroid) {
         final CallKitParams callKitParams = CallKitParams(
-          id: _incomingInvite!.callID,
-          nameCaller: _incomingInvite!.callerIdName,
-          handle: _incomingInvite!.callerIdNumber,
+          id: incomingInvite.callID,
+          nameCaller: incomingInvite.callerIdName,
+          handle: incomingInvite.callerIdNumber,
           appName: 'Telnyx Flutter Voice',
           type: 0,
         );
