@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:telnyx_webrtc/tx_socket_ping_metrics.dart';
@@ -19,55 +20,81 @@ class TxSocket with TxSocketPingMetricsMixin {
 
   String hostAddress;
 
-  late WebSocket _socket;
+  WebSocket? _socket;
   late OnOpenCallback onOpen;
   late OnMessageCallback onMessage;
   late OnCloseCallback onClose;
+  int _connectGeneration = 0;
 
   /// Connect to the WebSocket server
   void connect() async {
+    final generation = ++_connectGeneration;
+    final openCallback = onOpen;
+    final messageCallback = onMessage;
+    final closeCallback = onClose;
+
     try {
       GlobalLogger().i('TxSocket :: connect : $hostAddress');
 
-      _socket = await WebSocket.connect(hostAddress);
-      _socket
+      final socket = await WebSocket.connect(hostAddress);
+      if (!_isCurrentAttempt(generation)) {
+        unawaited(socket.close());
+        return;
+      }
+
+      _socket = socket;
+      socket
         ..pingInterval = const Duration(seconds: 10)
         ..timeout(const Duration(seconds: 30));
 
       // Initialize connection tracking
       initializePingTracking();
 
-      onOpen.call();
-
-      // Emit initial calculating state
-      emitInitialMetrics();
-
-      _socket.listen(
+      socket.listen(
         (dynamic data) {
+          if (!_isActiveSocket(generation, socket)) return;
+
           // Check if this is a ping/pong message
           if (isPingMessage(data)) {
             handlePingReceived();
           }
-          onMessage.call(data);
+          messageCallback.call(data);
         },
         onDone: () {
+          if (!_isActiveSocket(generation, socket)) return;
+
           cleanPingIntervals();
-          onClose.call(
-            _socket.closeCode ?? 0,
-            _socket.closeReason ?? 'Closed for unknown reason',
+          closeCallback.call(
+            socket.closeCode ?? 0,
+            socket.closeReason ?? 'Closed for unknown reason',
           );
+          if (identical(_socket, socket)) {
+            _socket = null;
+          }
         },
       );
+
+      openCallback.call();
+      if (!_isActiveSocket(generation, socket)) {
+        unawaited(socket.close());
+        return;
+      }
+
+      // Emit initial calculating state
+      emitInitialMetrics();
     } catch (e) {
+      if (!_isCurrentAttempt(generation)) return;
+
       cleanPingIntervals();
-      onClose.call(500, e.toString());
+      closeCallback.call(500, e.toString());
     }
   }
 
   /// Send data to the WebSocket server
   void send(dynamic data) {
-    if (_socket.readyState == WebSocket.open) {
-      _socket.add(data);
+    final socket = _socket;
+    if (socket != null && socket.readyState == WebSocket.open) {
+      socket.add(data);
       GlobalLogger().i('TxSocket :: Send : ${data?.toString().trim()}');
     } else {
       GlobalLogger().d('WebSocket not connected, message $data not sent');
@@ -76,7 +103,20 @@ class TxSocket with TxSocketPingMetricsMixin {
 
   /// Close the WebSocket connection
   void close() {
+    _connectGeneration++;
     cleanPingIntervals();
-    _socket.close();
+    final socket = _socket;
+    _socket = null;
+    if (socket != null) {
+      unawaited(socket.close());
+    }
+  }
+
+  bool _isCurrentAttempt(int generation) {
+    return generation == _connectGeneration;
+  }
+
+  bool _isActiveSocket(int generation, WebSocket socket) {
+    return _isCurrentAttempt(generation) && identical(_socket, socket);
   }
 }

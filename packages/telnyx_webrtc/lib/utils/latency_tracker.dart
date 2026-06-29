@@ -21,7 +21,8 @@ class LatencyTracker {
   static const String milestonePeerCreated = 'peer_connection_created';
   static const String milestonePeerSetupComplete = 'peer_setup_complete';
   static const String milestoneMediaDevicesAcquired = 'media_devices_acquired';
-  static const String milestoneSdpNegotiationStarted = 'sdp_negotiation_started';
+  static const String milestoneSdpNegotiationStarted =
+      'sdp_negotiation_started';
   static const String milestoneLocalSdpCreated = 'local_sdp_created';
   static const String milestoneLocalSdpSet = 'local_sdp_set';
   static const String milestoneInviteSent = 'invite_sent';
@@ -73,6 +74,7 @@ class LatencyTracker {
 
   // ===== Listeners =====
   LatencyMetricsCallback? _latencyMetricsListener;
+  bool _disposed = false;
 
   final StreamController<LatencyMetrics> _latencyMetricsController =
       StreamController<LatencyMetrics>.broadcast();
@@ -83,6 +85,8 @@ class LatencyTracker {
 
   /// Sets the callback for latency metrics updates.
   void setLatencyMetricsListener(LatencyMetricsCallback? listener) {
+    if (_disposed) return;
+
     _latencyMetricsListener = listener;
   }
 
@@ -149,8 +153,7 @@ class LatencyTracker {
   void markCallMilestone(String callId, String milestone) {
     final state = _callTrackers[callId];
     if (state == null) return;
-    final elapsed =
-        DateTime.now().millisecondsSinceEpoch - state.startTime;
+    final elapsed = DateTime.now().millisecondsSinceEpoch - state.startTime;
     state.milestones[milestone] = elapsed;
   }
 
@@ -223,15 +226,17 @@ class LatencyTracker {
     final timingsLogs = generateCallTimingsLogs(callId);
 
     final milestones = Map<String, int>.unmodifiable(state.milestones);
-    final totalTime =
-        DateTime.now().millisecondsSinceEpoch - state.startTime;
+    final totalTime = DateTime.now().millisecondsSinceEpoch - state.startTime;
 
     // Calculate derived metrics
     final iceGatheringLatency = _calculateIceGatheringLatency(milestones);
-    final signalingLatency =
-        _calculateSignalingLatency(milestones, state.isOutbound);
-    final mediaEstablishmentLatency =
-        _calculateMediaEstablishmentLatency(milestones);
+    final signalingLatency = _calculateSignalingLatency(
+      milestones,
+      state.isOutbound,
+    );
+    final mediaEstablishmentLatency = _calculateMediaEstablishmentLatency(
+      milestones,
+    );
     final timeToFirstRtp = _calculateTimeToFirstRtp(milestones);
 
     final metrics = LatencyMetrics(
@@ -264,8 +269,7 @@ class LatencyTracker {
     final state = _callTrackers[callId];
     if (state == null) return null;
     final milestones = Map<String, int>.unmodifiable(state.milestones);
-    final currentTime =
-        DateTime.now().millisecondsSinceEpoch - state.startTime;
+    final currentTime = DateTime.now().millisecondsSinceEpoch - state.startTime;
 
     return LatencyMetrics(
       callId: callId,
@@ -461,12 +465,19 @@ class LatencyTracker {
 
   /// Disposes resources.
   void dispose() {
+    if (_disposed) return;
+
+    _disposed = true;
+    _latencyMetricsListener = null;
+    reset();
     _latencyMetricsController.close();
   }
 
   // ===== Private Helpers =====
 
   void _emitMetrics(LatencyMetrics metrics) {
+    if (_disposed) return;
+
     _latencyMetricsListener?.call(metrics);
     if (!_latencyMetricsController.isClosed) {
       _latencyMetricsController.add(metrics);
@@ -483,7 +494,9 @@ class LatencyTracker {
   }
 
   int? _calculateSignalingLatency(
-      Map<String, int> milestones, bool isOutbound) {
+    Map<String, int> milestones,
+    bool isOutbound,
+  ) {
     if (isOutbound) {
       final start = milestones[milestoneInviteSent];
       final end = milestones[milestoneRemoteSdpReceived];
@@ -498,8 +511,8 @@ class LatencyTracker {
   }
 
   int? _calculateMediaEstablishmentLatency(Map<String, int> milestones) {
-    final start = milestones[milestoneIceConnected] ??
-        milestones[milestonePeerConnected];
+    final start =
+        milestones[milestoneIceConnected] ?? milestones[milestonePeerConnected];
     if (start == null) return null;
     final end = milestones[milestoneFirstRtpReceived] ??
         milestones[milestoneFirstRtpSent] ??

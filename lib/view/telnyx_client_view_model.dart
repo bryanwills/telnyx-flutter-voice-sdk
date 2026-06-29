@@ -74,7 +74,6 @@ class TelnyxClientViewModel with ChangeNotifier {
   // Call history tracking
   String? _currentCallDestination;
   CallDirection? _currentCallDirection;
-  DateTime? _currentCallStartTime;
 
   // Call termination reason tracking
   CallTerminationReason? _lastTerminationReason;
@@ -223,7 +222,6 @@ class TelnyxClientViewModel with ChangeNotifier {
     // Reset call history tracking
     _currentCallDestination = null;
     _currentCallDirection = null;
-    _currentCallStartTime = null;
 
     // Reset termination reason after a delay to allow UI to show it
     Timer(const Duration(seconds: 5), () {
@@ -423,13 +421,12 @@ class TelnyxClientViewModel with ChangeNotifier {
     // Observe Socket Messages Received
     _telnyxClient
       ..onConnectionStateChanged = (ConnectionStatus status) {
-        logger.i(
-          'TxClientViewModel :: Connection state changed: $status',
-        );
+        logger.i('TxClientViewModel :: Connection state changed: $status');
         if (_connectionStatus != status) {
           _connectionStatus = status;
           // Update the legacy _connected field for backward compatibility
-          _connected = status == ConnectionStatus.connected ||
+          _connected =
+              status == ConnectionStatus.connected ||
               status == ConnectionStatus.clientReady;
           notifyListeners();
         }
@@ -479,7 +476,6 @@ class TelnyxClientViewModel with ChangeNotifier {
                 _currentCallDestination =
                     _incomingInvite!.callerIdNumber ?? 'Unknown';
                 _currentCallDirection = CallDirection.incoming;
-                _currentCallStartTime = DateTime.now();
               }
 
               if (waitingForInvite) {
@@ -847,7 +843,6 @@ class TelnyxClientViewModel with ChangeNotifier {
     // Track outgoing call for history
     _currentCallDestination = destination;
     _currentCallDirection = CallDirection.outgoing;
-    _currentCallStartTime = DateTime.now();
 
     // Call NotificationService to handle the CallKit UI for outgoing call
     if (_currentCall?.callId != null) {
@@ -877,11 +872,12 @@ class TelnyxClientViewModel with ChangeNotifier {
     String? base64Image,
   }) {
     try {
-      currentCall?.sendConversationMessage(
-        message,
-        base64Images: base64Images,
-        base64Image: base64Image,
-      );
+      final images =
+          base64Images ??
+          (base64Image != null && base64Image.isNotEmpty
+              ? <String>[base64Image]
+              : null);
+      currentCall?.sendConversationMessage(message, base64Images: images);
     } catch (e) {
       logger.e('Error sending conversation message: $e');
     }
@@ -1207,5 +1203,11 @@ class TelnyxClientViewModel with ChangeNotifier {
         'TelnyxClientViewModel.forceIceRenegotiation: Error during renegotiation: $e',
       );
     }
+  }
+
+  @override
+  void dispose() {
+    _telnyxClient.dispose();
+    super.dispose();
   }
 }
