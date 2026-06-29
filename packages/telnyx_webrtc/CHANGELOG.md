@@ -5,6 +5,9 @@
 - Improved call report logging and diagnostics
 - Fixed analysis warnings blocking pub.dev publish
 - Updated publishing to pub.dev via GitHub Actions
+- Added `CallManager` class for multi-call handling, enabling hold/unhold, accept/reject, and call-swap operations when a second incoming call arrives
+- Added TURNS 443 (`turns:turn.telnyx.com:443?transport=tcp`) as a fallback ICE server for restrictive firewall environments
+- Added sample app support for multi-call UI (answer/reject controls for second incoming call)
 
 ## [4.2.0](https://pub.dev/packages/telnyx_webrtc/versions/4.2.0) (2026-04-23)
 ### Enhancement
