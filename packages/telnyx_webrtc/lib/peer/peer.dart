@@ -314,8 +314,10 @@ class Peer {
         CallTimingBenchmark.mark('offer_created');
 
         // Latency milestones
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneSdpNegotiationStarted);
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
+        _txClient.latencyTracker.markCallMilestone(
+            callId, LatencyTracker.milestoneSdpNegotiationStarted);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
 
         // For Android: Modify SDP to filter codecs
         String? sdpToUse = s.sdp;
@@ -337,7 +339,8 @@ class Peer {
         CallTimingBenchmark.mark('local_offer_sdp_set');
 
         // Latency milestone
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
 
         // Get the SDP immediately - it should not contain candidates yet
         String? sdpUsed = s.sdp;
@@ -385,7 +388,8 @@ class Peer {
         CallTimingBenchmark.mark('invite_sent');
 
         // Latency milestone
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneInviteSent);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneInviteSent);
       } else {
         // Traditional ICE gathering - use negotiation timer
         final RTCSessionDescription s =
@@ -395,14 +399,17 @@ class Peer {
         CallTimingBenchmark.mark('offer_created');
 
         // Latency milestones
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneSdpNegotiationStarted);
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
+        _txClient.latencyTracker.markCallMilestone(
+            callId, LatencyTracker.milestoneSdpNegotiationStarted);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
 
         await session.peerConnection!.setLocalDescription(s);
         CallTimingBenchmark.mark('local_offer_sdp_set');
 
         // Latency milestone
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
 
         if (session.remoteCandidates.isNotEmpty) {
           for (var candidate in session.remoteCandidates) {
@@ -458,8 +465,10 @@ class Peer {
           CallTimingBenchmark.mark('invite_sent');
 
           // Latency milestones
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneIceGatheringComplete);
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneInviteSent);
+          _txClient.latencyTracker.markCallMilestone(
+              callId, LatencyTracker.milestoneIceGatheringComplete);
+          _txClient.latencyTracker
+              .markCallMilestone(callId, LatencyTracker.milestoneInviteSent);
         });
       }
     } catch (e) {
@@ -472,10 +481,10 @@ class Peer {
   /// [sdp] The SDP string of the remote description.
   void remoteSessionReceived(String sdp) async {
     CallTimingBenchmark.start(isOutbound: true);
-    
+
     // Extract and cache remote ICE candidates from the SDP
     _callReportCollector?.cacheIceCandidatesFromSdp(sdp, isLocal: false);
-    
+
     await _sessions[_selfId]?.peerConnection?.setRemoteDescription(
           RTCSessionDescription(sdp, 'answer'),
         );
@@ -491,8 +500,10 @@ class Peer {
       }
     }
     if (remoteSdpCallId != null) {
-      _txClient.latencyTracker.markCallMilestone(remoteSdpCallId, LatencyTracker.milestoneRemoteSdpReceived);
-      _txClient.latencyTracker.markCallMilestone(remoteSdpCallId, LatencyTracker.milestoneRemoteSdpSet);
+      _txClient.latencyTracker.markCallMilestone(
+          remoteSdpCallId, LatencyTracker.milestoneRemoteSdpReceived);
+      _txClient.latencyTracker.markCallMilestone(
+          remoteSdpCallId, LatencyTracker.milestoneRemoteSdpSet);
     }
 
     // Process any queued candidates after setting remote SDP
@@ -549,7 +560,8 @@ class Peer {
 
     // Extract and cache remote ICE candidates from the SDP
     if (invite.sdp != null) {
-      _callReportCollector?.cacheIceCandidatesFromSdp(invite.sdp!, isLocal: false);
+      _callReportCollector?.cacheIceCandidatesFromSdp(invite.sdp!,
+          isLocal: false);
     }
 
     await session.peerConnection?.setRemoteDescription(
@@ -558,8 +570,10 @@ class Peer {
     CallTimingBenchmark.mark('remote_sdp_set');
 
     // Latency milestones for inbound call remote SDP
-    _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneRemoteSdpReceived);
-    _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneRemoteSdpSet);
+    _txClient.latencyTracker
+        .markCallMilestone(callId, LatencyTracker.milestoneRemoteSdpReceived);
+    _txClient.latencyTracker
+        .markCallMilestone(callId, LatencyTracker.milestoneRemoteSdpSet);
 
     // Process any queued candidates after setting remote SDP
     if (session.remoteCandidates.isNotEmpty) {
@@ -626,16 +640,22 @@ class Peer {
               _sendTrickleCandidate(candidate, callId);
 
               // Latency milestones for ICE candidates in answer path
-              final currentMetrics = _txClient.latencyTracker.getCurrentCallMetrics(callId);
-              if (currentMetrics == null || !currentMetrics.milestones.containsKey(LatencyTracker.milestoneFirstIceCandidate)) {
-                _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneFirstIceCandidate);
+              final currentMetrics =
+                  _txClient.latencyTracker.getCurrentCallMetrics(callId);
+              if (currentMetrics == null ||
+                  !currentMetrics.milestones
+                      .containsKey(LatencyTracker.milestoneFirstIceCandidate)) {
+                _txClient.latencyTracker.markCallMilestone(
+                    callId, LatencyTracker.milestoneFirstIceCandidate);
               }
               // Detect first srflx/relay candidate
               final candidateStr = candidate.candidate.toString().toLowerCase();
               if (candidateStr.contains('srflx')) {
-                _txClient.latencyTracker.markFirstSrflxRelayCandidate(callId, 'srflx');
+                _txClient.latencyTracker
+                    .markFirstSrflxRelayCandidate(callId, 'srflx');
               } else if (candidateStr.contains('relay')) {
-                _txClient.latencyTracker.markFirstSrflxRelayCandidate(callId, 'relay');
+                _txClient.latencyTracker
+                    .markFirstSrflxRelayCandidate(callId, 'relay');
               }
             } else {
               // Traditional ICE: filter and collect candidates
@@ -673,15 +693,18 @@ class Peer {
         CallTimingBenchmark.mark('local_answer_created');
 
         // Latency milestones
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneSdpNegotiationStarted);
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
+        _txClient.latencyTracker.markCallMilestone(
+            callId, LatencyTracker.milestoneSdpNegotiationStarted);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
 
         // For trickle ICE, we set the local description but don't wait for candidates
         await session.peerConnection!.setLocalDescription(s);
         CallTimingBenchmark.mark('local_sdp_set');
 
         // Latency milestone
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
 
         // Get the SDP immediately - it should not contain candidates yet
         String? sdpUsed = s.sdp;
@@ -728,20 +751,24 @@ class Peer {
         CallTimingBenchmark.mark('answer_sent');
 
         // Latency milestone
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneAnswerSent);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneAnswerSent);
       } else {
         // Traditional ICE gathering - wait for candidates
         final RTCSessionDescription s =
             await session.peerConnection!.createAnswer(_dcConstraints);
 
         // Latency milestones
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneSdpNegotiationStarted);
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
+        _txClient.latencyTracker.markCallMilestone(
+            callId, LatencyTracker.milestoneSdpNegotiationStarted);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpCreated);
 
         await session.peerConnection!.setLocalDescription(s);
 
         // Latency milestone
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneLocalSdpSet);
 
         _lastCandidateTime = DateTime.now();
         _setOnNegotiationComplete(() async {
@@ -785,8 +812,10 @@ class Peer {
           _send(jsonAnswerMessage);
 
           // Latency milestones
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneIceGatheringComplete);
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneAnswerSent);
+          _txClient.latencyTracker.markCallMilestone(
+              callId, LatencyTracker.milestoneIceGatheringComplete);
+          _txClient.latencyTracker
+              .markCallMilestone(callId, LatencyTracker.milestoneAnswerSent);
         });
       }
     } catch (e) {
@@ -799,7 +828,7 @@ class Peer {
     final sess = _sessions[_selfId];
     if (sess != null) {
       GlobalLogger().i('Session end success');
-      _closeSession(sess);
+      unawaited(_closeSession(sess));
     } else {
       GlobalLogger().d('Session end failed');
     }
@@ -858,8 +887,10 @@ class Peer {
       CallTimingBenchmark.mark('peer_connection_created');
 
       // Latency milestones
-      _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneMediaDevicesAcquired);
-      _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestonePeerCreated);
+      _txClient.latencyTracker.markCallMilestone(
+          callId, LatencyTracker.milestoneMediaDevicesAcquired);
+      _txClient.latencyTracker
+          .markCallMilestone(callId, LatencyTracker.milestonePeerCreated);
 
       // Apply initial mute state if requested
       if (_initialMuteState && _localStream != null) {
@@ -883,7 +914,8 @@ class Peer {
     }
 
     // Latency milestone for data-only mode
-    _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestonePeerCreated);
+    _txClient.latencyTracker
+        .markCallMilestone(callId, LatencyTracker.milestonePeerCreated);
 
     // Start stats asynchronously (non-blocking) to avoid delaying call setup
     unawaited(
@@ -943,16 +975,22 @@ class Peer {
           CallTimingBenchmark.markFirstCandidate();
 
           // Latency milestones for ICE candidates
-          final currentMetrics = _txClient.latencyTracker.getCurrentCallMetrics(callId);
-          if (currentMetrics == null || !currentMetrics.milestones.containsKey(LatencyTracker.milestoneFirstIceCandidate)) {
-            _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneFirstIceCandidate);
+          final currentMetrics =
+              _txClient.latencyTracker.getCurrentCallMetrics(callId);
+          if (currentMetrics == null ||
+              !currentMetrics.milestones
+                  .containsKey(LatencyTracker.milestoneFirstIceCandidate)) {
+            _txClient.latencyTracker.markCallMilestone(
+                callId, LatencyTracker.milestoneFirstIceCandidate);
           }
           // Detect first srflx/relay candidate
           final candidateStr = candidate.candidate.toString().toLowerCase();
           if (candidateStr.contains('srflx')) {
-            _txClient.latencyTracker.markFirstSrflxRelayCandidate(callId, 'srflx');
+            _txClient.latencyTracker
+                .markFirstSrflxRelayCandidate(callId, 'srflx');
           } else if (candidateStr.contains('relay')) {
-            _txClient.latencyTracker.markFirstSrflxRelayCandidate(callId, 'relay');
+            _txClient.latencyTracker
+                .markFirstSrflxRelayCandidate(callId, 'relay');
           }
           _sendTrickleCandidate(candidate, callId);
 
@@ -992,13 +1030,16 @@ class Peer {
       // Latency milestones for ICE connection states
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateChecking:
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneIceChecking);
+          _txClient.latencyTracker
+              .markCallMilestone(callId, LatencyTracker.milestoneIceChecking);
           break;
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneIceConnected);
+          _txClient.latencyTracker
+              .markCallMilestone(callId, LatencyTracker.milestoneIceConnected);
           break;
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneIceCompleted);
+          _txClient.latencyTracker
+              .markCallMilestone(callId, LatencyTracker.milestoneIceCompleted);
           break;
         default:
           break;
@@ -1078,8 +1119,10 @@ class Peer {
       CallTimingBenchmark.mark('peer_state_${state.name}');
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnecting) {
         // DTLS handshake starts during peer connection connecting phase
-        _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneDtlsConnecting);
-      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        _txClient.latencyTracker
+            .markCallMilestone(callId, LatencyTracker.milestoneDtlsConnecting);
+      } else if (state ==
+          RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         final Call? currentCall = _txClient.calls[callId];
         currentCall?.callHandler.changeState(CallState.active);
         onCallStateChange?.call(newSession, CallState.active);
@@ -1119,10 +1162,12 @@ class Peer {
       // Latency milestones for ICE gathering
       switch (state) {
         case RTCIceGatheringState.RTCIceGatheringStateGathering:
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneIceGatheringStarted);
+          _txClient.latencyTracker.markCallMilestone(
+              callId, LatencyTracker.milestoneIceGatheringStarted);
           break;
         case RTCIceGatheringState.RTCIceGatheringStateComplete:
-          _txClient.latencyTracker.markCallMilestone(callId, LatencyTracker.milestoneIceGatheringComplete);
+          _txClient.latencyTracker.markCallMilestone(
+              callId, LatencyTracker.milestoneIceGatheringComplete);
           break;
         default:
           break;
@@ -1282,12 +1327,14 @@ class Peer {
     final host = _txClient.socketHost;
 
     if (callReportId == null) {
-      GlobalLogger().d('Peer :: Cannot post call report: callReportId not available');
+      GlobalLogger()
+          .d('Peer :: Cannot post call report: callReportId not available');
       return;
     }
 
     if (host == null) {
-      GlobalLogger().e('Peer :: Cannot post call report: socket host not available');
+      GlobalLogger()
+          .e('Peer :: Cannot post call report: socket host not available');
       return;
     }
 
@@ -1328,6 +1375,11 @@ class Peer {
   }
 
   Future<void> _cleanSessions() async {
+    _stopNegotiationTimer();
+    _stopTrickleIceTimer();
+    _statsManager?.stopStatsReporting();
+    await _callReportCollector?.stop();
+
     if (_localStream != null) {
       _localStream!.getTracks().forEach((element) async {
         await element.stop();
@@ -1335,27 +1387,27 @@ class Peer {
       await _localStream!.dispose();
       _localStream = null;
     }
-    _sessions
-      ..forEach((key, sess) async {
-        await sess.peerConnection?.close();
-        await sess.dc?.close();
-      })
-      ..clear();
+    for (final sess in _sessions.values) {
+      await sess.peerConnection?.close();
+      await sess.peerConnection?.dispose();
+      await sess.dc?.close();
+    }
+    _sessions.clear();
   }
 
   Future<void> _closeSession(Session session) async {
+    _stopNegotiationTimer();
+    _stopTrickleIceTimer();
+
     _localStream?.getTracks().forEach((element) async {
       await element.stop();
     });
     await _localStream?.dispose();
     _localStream = null;
-    stopStats(session.sid);
+    await stopStats(session.sid);
     await session.peerConnection?.close();
     await session.peerConnection?.dispose();
     await session.dc?.close();
-
-    // Clean up trickle ICE timer when session is closed
-    _stopTrickleIceTimer();
   }
 
   /// Sets a callback to be invoked when ICE negotiation is complete
