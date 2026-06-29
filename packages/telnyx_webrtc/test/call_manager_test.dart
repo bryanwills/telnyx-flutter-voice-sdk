@@ -75,9 +75,10 @@ void main() {
     });
 
     test('registers different callIds independently', () {
-      final telnyxClient = TelnyxClient();
-      final Call callA = telnyxClient.call..callId = 'call-A';
-      final Call callB = telnyxClient.call..callId = 'call-B';
+      final telnyxClientA = TelnyxClient();
+      final telnyxClientB = TelnyxClient();
+      final Call callA = telnyxClientA.call..callId = 'call-A';
+      final Call callB = telnyxClientB.call..callId = 'call-B';
 
       final callManager = CallManager();
       callManager.registerCall(callA);
