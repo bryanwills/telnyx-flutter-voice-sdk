@@ -125,6 +125,36 @@ void main() {
 
     expect(fakeSocket.connectCount, 2);
   });
+
+  test('disconnect during reconnect does not leave attaching state stuck',
+      () async {
+    final states = <ConnectionStatus>[];
+
+    client
+      ..onConnectionStateChanged = states.add
+      ..connectWithCredential(_credentialConfig());
+
+    await pumpEventQueue();
+    fakeConnectivityPlatform.emit([ConnectivityResult.wifi]);
+    await pumpEventQueue();
+    fakeConnectivityPlatform.emit([ConnectivityResult.mobile]);
+    await pumpEventQueue();
+
+    expect(states.where((state) => state == ConnectionStatus.reconnecting),
+        hasLength(1));
+
+    client.disconnect();
+    client.connectWithCredential(_credentialConfig(sipUser: 'second'));
+
+    await pumpEventQueue();
+    fakeConnectivityPlatform.emit([ConnectivityResult.wifi]);
+    await pumpEventQueue();
+    fakeConnectivityPlatform.emit([ConnectivityResult.mobile]);
+    await pumpEventQueue();
+
+    expect(states.where((state) => state == ConnectionStatus.reconnecting),
+        hasLength(2));
+  });
 }
 
 CredentialConfig _credentialConfig({

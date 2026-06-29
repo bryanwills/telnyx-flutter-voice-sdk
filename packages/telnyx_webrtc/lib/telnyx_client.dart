@@ -418,6 +418,7 @@ class TelnyxClient {
   void _invalidateConnectionGeneration() {
     _connectionGeneration++;
     _cancelDelayedConnectionTimers();
+    _isAttaching = false;
   }
 
   Timer _scheduleConnectionTimer(
