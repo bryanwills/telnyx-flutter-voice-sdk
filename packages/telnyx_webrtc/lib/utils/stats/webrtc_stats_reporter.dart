@@ -47,6 +47,10 @@ class WebRTCStatsReporter {
 
   Timer? _callQualityTimer;
   Timer? _socketStatsTimer;
+  Future<void>? _startStatsReportingFuture;
+  bool _stopRequested = false;
+  bool _isReporting = false;
+  int _lifecycleGeneration = 0;
   bool debugReportStarted = false;
   final Uuid uuid = const Uuid();
   String debugStatsId = const Uuid().v4();
@@ -95,7 +99,17 @@ class WebRTCStatsReporter {
     }
   }
 
-  Future<void> startStatsReporting() async {
+  Future<void> startStatsReporting() {
+    if (_stopRequested || _isReporting) {
+      return _startStatsReportingFuture ?? Future<void>.value();
+    }
+
+    return _startStatsReportingFuture ??= _startStatsReporting(
+      ++_lifecycleGeneration,
+    );
+  }
+
+  Future<void> _startStatsReporting(int lifecycleGeneration) async {
     //ToDo(Oliver): leave this here to uncomment to test as needed
     //await _initializeLogFile();
 
@@ -104,8 +118,16 @@ class WebRTCStatsReporter {
       _sendStartDebugReport(debugStatsId);
     }
 
-    await _sendAddConnectionMessage();
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (!_canStartTimers(lifecycleGeneration)) {
+      return;
+    }
+
+    _sendAddConnectionMessage();
     await _setupPeerEventHandlers();
+    if (!_canStartTimers(lifecycleGeneration)) {
+      return;
+    }
 
     // Start call quality updates every 100ms for real-time UI
     GlobalLogger().d(
@@ -117,6 +139,8 @@ class WebRTCStatsReporter {
         await _collectCallQualityMetrics();
       },
     );
+
+    _isReporting = true;
 
     // Start socket stats reporting every 3 seconds to avoid overloading
     GlobalLogger().d(
@@ -130,13 +154,22 @@ class WebRTCStatsReporter {
     );
   }
 
+  bool _canStartTimers(int lifecycleGeneration) =>
+      !_stopRequested && lifecycleGeneration == _lifecycleGeneration;
+
   void stopStatsReporting() {
+    _stopRequested = true;
+    _lifecycleGeneration++;
+
     if (debugReportStarted) {
       debugReportStarted = false;
       _sendStopDebugReport(debugStatsId);
     }
     _callQualityTimer?.cancel();
+    _callQualityTimer = null;
     _socketStatsTimer?.cancel();
+    _socketStatsTimer = null;
+    _isReporting = false;
   }
 
   Future<void> _setupPeerEventHandlers() async {
@@ -478,9 +511,7 @@ class WebRTCStatsReporter {
     };
   }
 
-  Future<void> _sendAddConnectionMessage() async {
-    // add a 2 second delay here to allow stats reporting to start before adding connection
-    await Future.delayed(Duration(seconds: 2));
+  void _sendAddConnectionMessage() {
     final message = DebugReportDataMessage(
       reportId: debugStatsId,
       reportData: {
@@ -628,8 +659,7 @@ class WebRTCStatsReporter {
             final remoteInboundValues = report.values.cast<String, dynamic>();
             if (remoteInboundValues['kind'] == 'audio') {
               // Extract jitter from RTCP feedback (consistent with Android/iOS)
-              jitter =
-                  (remoteInboundValues['jitter'] as num?)?.toDouble() ?? 0;
+              jitter = (remoteInboundValues['jitter'] as num?)?.toDouble() ?? 0;
               rtt =
                   (remoteInboundValues['roundTripTime'] as num?)?.toDouble() ??
                       0;
