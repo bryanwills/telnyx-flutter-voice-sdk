@@ -144,7 +144,8 @@ class AndroidPushNotificationHandler implements PushNotificationHandler {
     try {
       await flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(channel);
       _logger.i(
         '[PushNotificationHandler-Android] High importance notification channel created/updated.',
@@ -274,9 +275,36 @@ class AndroidPushNotificationHandler implements PushNotificationHandler {
           _logger.i(
             '[PushNotificationHandler-Android] actionCallDecline: Received. Metadata: ${event.body?['extra']?['metadata']}',
           );
+          final declinedCallId = event.body?['id']?.toString();
+          if (txClientViewModel.shouldIgnoreAndroidCallKitEvent(
+            'decline',
+            declinedCallId,
+          )) {
+            break;
+          }
           final metadata = event.body['extra']?['metadata'];
           if (txClientViewModel.incomingInvitation != null ||
               txClientViewModel.currentCall != null) {
+            if (declinedCallId != null &&
+                declinedCallId.isNotEmpty &&
+                txClientViewModel.incomingInvitation?.callID ==
+                    declinedCallId) {
+              _logger.i(
+                '[PushNotificationHandler-Android] actionCallDecline: Rejecting matching incoming call $declinedCallId.',
+              );
+              txClientViewModel.rejectIncomingCall();
+              break;
+            }
+
+            if (declinedCallId != null &&
+                declinedCallId.isNotEmpty &&
+                txClientViewModel.currentCall?.callId != declinedCallId) {
+              _logger.i(
+                '[PushNotificationHandler-Android] actionCallDecline: Ignoring stale decline event for $declinedCallId.',
+              );
+              break;
+            }
+
             _logger.i(
               '[PushNotificationHandler-Android] actionCallDecline: Main client has existing call/invite. Using txClientViewModel.endCall().',
             );
@@ -323,12 +351,36 @@ class AndroidPushNotificationHandler implements PushNotificationHandler {
           _logger.i(
             '[PushNotificationHandler-Android] actionCallEnded: Call ended event from CallKit.',
           );
+          final endedCallId = event.body?['id']?.toString();
+          if (txClientViewModel.shouldIgnoreAndroidCallKitEvent(
+            'ended',
+            endedCallId,
+          )) {
+            break;
+          }
+          if (endedCallId != null &&
+              endedCallId.isNotEmpty &&
+              txClientViewModel.currentCall?.callId != endedCallId) {
+            break;
+          }
           txClientViewModel.endCall();
           break;
         case Event.actionCallTimeout:
           _logger.i(
             '[PushNotificationHandler-Android] actionCallTimeout: Call timeout event from CallKit.',
           );
+          final timedOutCallId = event.body?['id']?.toString();
+          if (txClientViewModel.shouldIgnoreAndroidCallKitEvent(
+            'timeout',
+            timedOutCallId,
+          )) {
+            break;
+          }
+          if (timedOutCallId != null &&
+              timedOutCallId.isNotEmpty &&
+              txClientViewModel.currentCall?.callId != timedOutCallId) {
+            break;
+          }
           txClientViewModel.endCall();
           break;
 
@@ -396,8 +448,8 @@ class AndroidPushNotificationHandler implements PushNotificationHandler {
   @override
   Future<Map<String, dynamic>?> getInitialPushData() async {
     _logger.i('[PushNotificationHandler-Android] getInitialPushData');
-    final RemoteMessage? initialMessage =
-        await FirebaseMessaging.instance.getInitialMessage();
+    final RemoteMessage? initialMessage = await FirebaseMessaging.instance
+        .getInitialMessage();
     if (initialMessage != null) {
       _logger.i(
         '[PushNotificationHandler-Android] getInitialPushData: Found initial message: ${initialMessage.data}',
