@@ -160,6 +160,9 @@ class TelnyxClient {
 
   bool _closed = false;
   bool _connected = false;
+  /// Guards against duplicate onOpen callbacks for a single connect() call.
+  /// Reset to false in disconnect/onClose to allow reconnection.
+  bool _onOpenProcessed = false;
   ConnectionStatus _connectionStatus = ConnectionStatus.disconnected;
 
   /// The current session ID related to this client
@@ -1016,6 +1019,17 @@ class TelnyxClient {
       txSocket
         ..connect()
         ..onOpen = () {
+          // Idempotency guard: prevent duplicate onOpen processing for a
+          // single connect() call. The socket may fire onOpen twice (seen
+          // on some Android devices), which causes a double login and
+          // creates two server sessions with different voice_sdk_ids.
+          if (_onOpenProcessed) {
+            GlobalLogger().w(
+              'TelnyxClient._connectWithCallBack: duplicate onOpen ignored',
+            );
+            return;
+          }
+          _onOpenProcessed = true;
           _closed = false;
           _updateConnectionState(true);
           GlobalLogger().i(
@@ -1902,6 +1916,7 @@ class TelnyxClient {
     // Cancel any pending answer timeout
     _cancelPendingAnswerTimeout();
     clearPushMetaData();
+    _onOpenProcessed = false;
     GlobalLogger().i('disconnect()');
     if (_closed) {
       GlobalLogger().i('WebSocket is already closed');
@@ -1930,6 +1945,7 @@ class TelnyxClient {
     // Cancel any pending answer timeout
     _cancelPendingAnswerTimeout();
     clearPushMetaData();
+    _onOpenProcessed = false;
     GlobalLogger().i('disconnect()');
     if (_closed) return;
     // Don't wait for the WebSocket 'close' event, do it now.
@@ -1953,6 +1969,7 @@ class TelnyxClient {
   }
 
   void _onClose(bool wasClean, int code, String reason) {
+    _onOpenProcessed = false;
     GlobalLogger().i('WebSocket closed');
     if (wasClean == false) {
       GlobalLogger().i('WebSocket abrupt disconnection');
