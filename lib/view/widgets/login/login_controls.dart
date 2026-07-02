@@ -44,10 +44,14 @@ class _LoginControlsState extends State<LoginControls> {
               const SizedBox(height: spacingXS),
               Row(
                 children: <Widget>[
-                  Text(
-                    selectedProfile?.sipCallerIDName ?? 'No profile selected',
+                  Expanded(
+                    child: Text(
+                      selectedProfile?.sipCallerIDName ?? 'No profile selected',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  const SizedBox(width: spacingXXXXXL),
+                  const SizedBox(width: spacingS),
                   OutlinedButton(
                     onPressed: _showProfileSwitcher,
                     style: OutlinedButton.styleFrom(

@@ -110,14 +110,6 @@ Future<void> main() async {
               logger.i(
                 '[BackgroundDetector] We are in the foreground, CONNECTING',
               );
-              // Check if we are from push, if we are do nothing, reconnection will happen there in handlePush. Otherwise connect
-              if (!txClientViewModel.callFromPush) {
-                if (config != null && config is CredentialConfig) {
-                  txClientViewModel.login(config);
-                } else if (config != null && config is TokenConfig) {
-                  txClientViewModel.loginWithToken(config);
-                }
-              }
             } else if (state == AppLifecycleState.paused) {
               logger.i(
                 '[BackgroundDetector] We are in the background, DISCONNECTING',
