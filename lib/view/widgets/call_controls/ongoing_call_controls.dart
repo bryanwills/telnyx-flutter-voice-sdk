@@ -111,10 +111,15 @@ class OnGoingCallControls extends StatelessWidget {
         ),
         SizedBox(height: spacingM),
         // Decline/End call button underneath
-        DeclineButton(
-          onPressed: () {
-            context.read<TelnyxClientViewModel>().endCall();
-          },
+        Semantics(
+          identifier: 'end_call_button',
+          container: true,
+          child: DeclineButton(
+            key: const ValueKey('end_call_button'),
+            onPressed: () {
+              context.read<TelnyxClientViewModel>().endCall();
+            },
+          ),
         ),
       ],
     );
