@@ -212,14 +212,30 @@ class _CallControlsState extends State<CallControls> {
           )
         else if (clientState == CallStateStatus.ongoingInvitation)
           Center(
-            child: CallInvitation(
-              onAccept: () {
-                context.read<TelnyxClientViewModel>().accept();
-              },
-              onDecline: () {
-                context.read<TelnyxClientViewModel>().endCall();
-              },
-            ),
+            child: Builder(builder: (context) {
+              final hasActiveCall = context.select<TelnyxClientViewModel, bool>(
+                (vm) => vm.hasActiveCall,
+              );
+              return CallInvitation(
+                onAccept: () {
+                  context.read<TelnyxClientViewModel>().accept();
+                },
+                onDecline: () {
+                  if (hasActiveCall) {
+                    context.read<TelnyxClientViewModel>().rejectIncomingCall();
+                  } else {
+                    context.read<TelnyxClientViewModel>().endCall();
+                  }
+                },
+                hasActiveCall: hasActiveCall,
+                onHoldAndAccept: () {
+                  context.read<TelnyxClientViewModel>().holdCurrentAndAcceptIncoming();
+                },
+                onEndAndAccept: () {
+                  context.read<TelnyxClientViewModel>().endCurrentAndAcceptIncoming();
+                },
+              );
+            }),
           )
         else if (clientState == CallStateStatus.connectingToCall)
           Center(child: CircularProgressIndicator())

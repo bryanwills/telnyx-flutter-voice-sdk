@@ -49,6 +49,7 @@ import 'package:telnyx_webrtc/utils/candidate_utils.dart';
 import 'package:telnyx_webrtc/model/socket_connection_metrics.dart';
 import 'package:telnyx_webrtc/model/tx_server_configuration.dart';
 import 'package:telnyx_webrtc/model/audio_constraints.dart';
+import 'package:telnyx_webrtc/call_manager.dart';
 import 'package:telnyx_webrtc/utils/latency_tracker.dart';
 
 /// Callback for when the socket receives a message
@@ -222,6 +223,12 @@ class TelnyxClient {
 
   /// A map of all current calls, with the call ID as the key and the [Call] object as the value.
   Map<String, Call> calls = {};
+
+  /// Manages multi-call state: tracks the current active call and held calls.
+  ///
+  /// Use [callManager] to decide how to handle an incoming call when there is
+  /// already an active call (hold+accept, end+accept, or reject).
+  final CallManager callManager = CallManager();
 
   /// A map of pending ICE candidates, with the call ID as the key and a list of candidates as the value.
   /// These candidates are queued and will be processed after the remote description is set.
@@ -1637,6 +1644,11 @@ class TelnyxClient {
     } //play ringback tone
     inviteCall.playAudio(_ringBackpath);
     inviteCall.callHandler.changeState(CallState.newCall);
+
+    // Register the outbound call with CallManager and set as current.
+    callManager.registerCall(inviteCall);
+    callManager.setCurrentCall(inviteCall);
+
     return inviteCall;
   }
 
@@ -1734,6 +1746,13 @@ class TelnyxClient {
     if (answerCall.callId != null) {
       updateCall(answerCall);
     }
+
+    // Register the accepted call with CallManager and set it as the current
+    // active call. If there was a previous currentCall it should already have
+    // been put on hold by holdCurrentAndAcceptIncoming before this point.
+    callManager.registerCall(answerCall);
+    callManager.setCurrentCall(answerCall);
+
     clearPushMetaData();
     return answerCall;
   }
@@ -1755,6 +1774,122 @@ class TelnyxClient {
     } else {
       calls[call.callId!] = call;
     }
+  }
+
+  // ===========================================================================
+  // Multi-call convenience methods
+  // ===========================================================================
+
+  /// Holds the current active call (if any) and accepts the incoming call
+  /// identified by [incomingCallId].
+  ///
+  /// Use this when the user wants to put the current call on hold and answer
+  /// an incoming call. The current call will be placed on hold via
+  /// [Call.onHoldUnholdPressed] and the incoming call will be accepted.
+  ///
+  /// Returns the accepted [Call].
+  ///
+  /// **Example:**
+  /// ```dart
+  /// telnyxClient.onSocketMessageReceived = (message) {
+  ///   if (message.socketMethod == SocketMethod.invite) {
+  ///     if (telnyxClient.callManager.hasActiveCall) {
+  ///       telnyxClient.holdCurrentAndAcceptIncoming(
+  ///         incomingCallId,
+  ///         inviteParams,
+  ///         callerName,
+  ///         callerNumber,
+  ///         clientState,
+  ///       );
+  ///     } else {
+  ///       telnyxClient.acceptCall(...);
+  ///     }
+  ///   }
+  /// };
+  /// ```
+  Call holdCurrentAndAcceptIncoming(
+    String incomingCallId,
+    IncomingInviteParams invite,
+    String callerName,
+    String callerNumber,
+    String clientState, {
+    Map<String, String> customHeaders = const {},
+    bool debug = false,
+    bool useTrickleIce = false,
+    bool mutedMicOnStart = false,
+    AudioConstraints? audioConstraints,
+    String? answeredDeviceToken,
+  }) {
+    return callManager.holdCurrentAndAcceptIncoming(
+      incomingCallId,
+      (callId) => acceptCall(
+        invite,
+        callerName,
+        callerNumber,
+        clientState,
+        customHeaders: customHeaders,
+        debug: debug,
+        useTrickleIce: useTrickleIce,
+        mutedMicOnStart: mutedMicOnStart,
+        audioConstraints: audioConstraints,
+        answeredDeviceToken: answeredDeviceToken,
+      ),
+    );
+  }
+
+  /// Ends the current active call and accepts the incoming call identified by
+  /// [incomingCallId].
+  ///
+  /// Use this when the user wants to hang up the current call and answer an
+  /// incoming call.
+  ///
+  /// Returns the accepted [Call].
+  Call endCurrentAndAcceptIncoming(
+    String incomingCallId,
+    IncomingInviteParams invite,
+    String callerName,
+    String callerNumber,
+    String clientState, {
+    Map<String, String> customHeaders = const {},
+    bool debug = false,
+    bool useTrickleIce = false,
+    bool mutedMicOnStart = false,
+    AudioConstraints? audioConstraints,
+    String? answeredDeviceToken,
+  }) {
+    return callManager.endCurrentAndAcceptIncoming(
+      incomingCallId,
+      endCall: (callId) {
+        final call = calls[callId];
+        call?.endCall();
+      },
+      acceptCall: (callId) => acceptCall(
+        invite,
+        callerName,
+        callerNumber,
+        clientState,
+        customHeaders: customHeaders,
+        debug: debug,
+        useTrickleIce: useTrickleIce,
+        mutedMicOnStart: mutedMicOnStart,
+        audioConstraints: audioConstraints,
+        answeredDeviceToken: answeredDeviceToken,
+      ),
+    );
+  }
+
+  /// Rejects an incoming call by sending BYE with USER_BUSY cause.
+  ///
+  /// Use this to decline an incoming call without affecting the current active
+  /// call (if any). The call must be in [CallState.ringing] state.
+  void rejectCall(String callId) {
+    final call = calls[callId];
+    if (call == null) {
+      GlobalLogger().w('rejectCall: Call not found for ID: $callId');
+      return;
+    }
+    call.endCall();
+    callManager.onIncomingCallRejected(callId);
   }
 
   /// Closes the socket connection and provides a callback upon completion.
@@ -2179,6 +2314,10 @@ class TelnyxClient {
                     ..callId = invite.inviteParams?.callID;
                   updateCall(offerCall);
 
+                  // Register the incoming call with CallManager so the app can
+                  // query callManager.hasActiveCall to decide how to handle it.
+                  callManager.registerCall(offerCall);
+
                   // Mark invite received for latency tracking
                   if (offerCall.callId != null) {
                     latencyTracker.startCallTracking(
@@ -2198,13 +2337,27 @@ class TelnyxClient {
                     // Cancel the pending answer timeout since INVITE arrived
                     _cancelPendingAnswerTimeout();
 
-                    offerCall.acceptCall(
-                      invite.inviteParams!,
-                      invite.inviteParams!.calleeIdName ?? '',
-                      invite.inviteParams!.callerIdNumber ?? '',
-                      'State',
-                      answeredDeviceToken: _answeredDeviceToken,
-                    );
+                    // Auto-answer from push notification
+                    if (callManager.hasActiveCall) {
+                      callManager.holdCurrentAndAcceptIncoming(
+                        offerCall.callId!,
+                        (callId) => acceptCall(
+                          invite.inviteParams!,
+                          invite.inviteParams!.calleeIdName ?? '',
+                          invite.inviteParams!.callerIdNumber ?? '',
+                          'State',
+                          answeredDeviceToken: _answeredDeviceToken,
+                        ),
+                      );
+                    } else {
+                      offerCall.acceptCall(
+                        invite.inviteParams!,
+                        invite.inviteParams!.calleeIdName ?? '',
+                        invite.inviteParams!.callerIdNumber ?? '',
+                        'State',
+                        answeredDeviceToken: _answeredDeviceToken,
+                      );
+                    }
                     _pendingAnswerFromPush = false;
                     _answeredDeviceToken = null; // Clear after use
                     offerCall.callHandler.changeState(CallState.connecting);
@@ -2394,6 +2547,12 @@ class TelnyxClient {
                   // Cancel latency tracking for this call
                   if (byeCall.callId != null) {
                     latencyTracker.cancelCallTracking(byeCall.callId!);
+                  }
+
+                  // Let CallManager handle multi-call cleanup (auto-unhold held
+                  // calls if this was the current active call).
+                  if (byeCall.callId != null) {
+                    callManager.onByeReceived(byeCall.callId!);
                   }
                   break;
                 }
