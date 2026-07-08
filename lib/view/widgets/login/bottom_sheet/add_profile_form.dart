@@ -273,55 +273,75 @@ class _AddProfileFormState extends State<AddProfileForm> {
                 },
               ),
             ] else ...[
-              CustomFormField(
-                title: 'SIP Username',
-                controller: _sipUserController,
-                hintText: 'Enter your SIP username',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a SIP username';
-                  }
-                  return null;
-                },
+              Semantics(
+                identifier: 'sip_username_field',
+                container: true,
+                child: CustomFormField(
+                  key: const ValueKey('sip_username_field'),
+                  title: 'SIP Username',
+                  controller: _sipUserController,
+                  hintText: 'Enter your SIP username',
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter a SIP username';
+                    }
+                    return null;
+                  },
+                ),
               ),
               const SizedBox(height: spacingS),
-              CustomFormField(
-                title: 'SIP Password',
-                controller: _sipPasswordController,
-                hintText: 'Enter your SIP password',
-                isPassword: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a SIP password';
-                  }
-                  return null;
-                },
+              Semantics(
+                identifier: 'sip_password_field',
+                container: true,
+                child: CustomFormField(
+                  key: const ValueKey('sip_password_field'),
+                  title: 'SIP Password',
+                  controller: _sipPasswordController,
+                  hintText: 'Enter your SIP password',
+                  isPassword: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter a SIP password';
+                    }
+                    return null;
+                  },
+                ),
               ),
             ],
             const SizedBox(height: spacingS),
-            CustomFormField(
-              title: 'Caller ID Name',
-              controller: _sipCallerIDNameController,
-              hintText: 'Enter your caller ID name',
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter a caller ID name';
-                }
-                return null;
-              },
+            Semantics(
+              identifier: 'caller_name_field',
+              container: true,
+              child: CustomFormField(
+                key: const ValueKey('caller_name_field'),
+                title: 'Caller ID Name',
+                controller: _sipCallerIDNameController,
+                hintText: 'Enter your caller ID name',
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter a caller ID name';
+                  }
+                  return null;
+                },
+              ),
             ),
             const SizedBox(height: spacingS),
-            CustomFormField(
-              title: 'Caller ID Number',
-              controller: _sipCallerIDNumberController,
-              hintText: 'Enter your caller ID number',
-              keyboardType: TextInputType.phone,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter a caller ID number';
-                }
-                return null;
-              },
+            Semantics(
+              identifier: 'caller_number_field',
+              container: true,
+              child: CustomFormField(
+                key: const ValueKey('caller_number_field'),
+                title: 'Caller ID Number',
+                controller: _sipCallerIDNumberController,
+                hintText: 'Enter your caller ID number',
+                keyboardType: TextInputType.phone,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter a caller ID number';
+                  }
+                  return null;
+                },
+              ),
             ),
             const SizedBox(height: spacingS),
             // Region Selection
@@ -430,46 +450,52 @@ class _AddProfileFormState extends State<AddProfileForm> {
                   child: const Text('Cancel'),
                 ),
                 const SizedBox(width: spacingM),
-                ElevatedButton(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      final profile = Profile(
-                        isTokenLogin: _isTokenLogin,
-                        token: _tokenController.text,
-                        sipUser: _sipUserController.text,
-                        sipPassword: _sipPasswordController.text,
-                        sipCallerIDName: _sipCallerIDNameController.text,
-                        sipCallerIDNumber: _sipCallerIDNumberController.text,
-                        region: _selectedRegion,
-                        fallbackOnRegionFailure: _fallbackOnRegionFailure,
-                        forceRelayCandidate: _forceRelayCandidate,
-                      );
+                Semantics(
+                  identifier: 'add_profile_save_button',
+                  container: true,
+                  child: ElevatedButton(
+                    key: const ValueKey('add_profile_save_button'),
+                    onPressed: () {
+                      if (_formKey.currentState!.validate()) {
+                        final profile = Profile(
+                          isTokenLogin: _isTokenLogin,
+                          token: _tokenController.text,
+                          sipUser: _sipUserController.text,
+                          sipPassword: _sipPasswordController.text,
+                          sipCallerIDName: _sipCallerIDNameController.text,
+                          sipCallerIDNumber: _sipCallerIDNumberController.text,
+                          region: _selectedRegion,
+                          fallbackOnRegionFailure: _fallbackOnRegionFailure,
+                          forceRelayCandidate: _forceRelayCandidate,
+                        );
 
-                      try {
-                        final provider = context.read<ProfileProvider>();
-                        if (widget.existingProfile != null) {
-                          // Update existing profile
-                          provider.updateProfile(
-                            widget.existingProfile!.sipCallerIDName,
-                            profile,
-                          );
-                        } else {
-                          // Add new profile
-                          provider.addProfile(profile);
+                        try {
+                          final provider = context.read<ProfileProvider>();
+                          if (widget.existingProfile != null) {
+                            // Update existing profile
+                            provider.updateProfile(
+                              widget.existingProfile!.sipCallerIDName,
+                              profile,
+                            );
+                          } else {
+                            // Add new profile
+                            provider.addProfile(profile);
+                          }
+                          setState(() {
+                            _resetForm();
+                          });
+                          widget.onCancelPressed();
+                        } catch (e) {
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text(e.toString())));
                         }
-                        setState(() {
-                          _resetForm();
-                        });
-                        widget.onCancelPressed();
-                      } catch (e) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text(e.toString())));
                       }
-                    }
-                  },
-                  child:
-                      Text(widget.existingProfile != null ? 'Update' : 'Save'),
+                    },
+                    child: Text(
+                      widget.existingProfile != null ? 'Update' : 'Save',
+                    ),
+                  ),
                 ),
               ],
             ),

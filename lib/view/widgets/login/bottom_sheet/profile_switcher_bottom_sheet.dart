@@ -48,24 +48,29 @@ class _ProfileSwitcherBottomSheetState
             ),
           ),
           if (!_isAddingProfile)
-            ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _isAddingProfile = true;
-                });
-              },
-              icon: const Icon(Icons.add, color: Colors.black),
-              label: const Text(
-                'Add new profile',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w400,
+            Semantics(
+              identifier: 'add_profile_button',
+              container: true,
+              child: ElevatedButton.icon(
+                key: const ValueKey('add_profile_button'),
+                onPressed: () {
+                  setState(() {
+                    _isAddingProfile = true;
+                  });
+                },
+                icon: const Icon(Icons.add, color: Colors.black),
+                label: const Text(
+                  'Add new profile',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(spacingXXL),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(spacingXXL),
+                  ),
                 ),
               ),
             ),
@@ -103,13 +108,18 @@ class _ProfileSwitcherBottomSheetState
                         child: const Text('Cancel'),
                       ),
                       const SizedBox(width: spacingM),
-                      ElevatedButton(
-                        onPressed:
-                            context.watch<ProfileProvider>().selectedProfile !=
-                                    null
-                                ? () => Navigator.pop(context)
-                                : null,
-                        child: const Text('Confirm'),
+                      Semantics(
+                        identifier: 'profile_confirm_button',
+                        container: true,
+                        child: ElevatedButton(
+                          key: const ValueKey('profile_confirm_button'),
+                          onPressed:
+                              context.watch<ProfileProvider>().selectedProfile !=
+                                      null
+                                  ? () => Navigator.pop(context)
+                                  : null,
+                          child: const Text('Confirm'),
+                        ),
                       ),
                     ],
                   ),

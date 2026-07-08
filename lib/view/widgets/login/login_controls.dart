@@ -53,6 +53,7 @@ class _LoginControlsState extends State<LoginControls> {
                   ),
                   const SizedBox(width: spacingS),
                   OutlinedButton(
+                    key: const ValueKey('switch_profile_button'),
                     onPressed: _showProfileSwitcher,
                     style: OutlinedButton.styleFrom(
                       shape: RoundedRectangleBorder(
