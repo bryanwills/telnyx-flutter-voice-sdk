@@ -87,6 +87,7 @@ class CallHandler {
     // Also post on dropped state (network loss) — matches iOS behaviour
     // Use unawaited - don't block state change on stats/network operations
     if (state == CallState.done || state == CallState.dropped) {
+      call?._disposeAudio();
       unawaited(call?._stopStatsAndPostReport());
     }
   }
@@ -95,6 +96,7 @@ class CallHandler {
 /// The Call class which is used for call related methods such as hold/mute or
 /// creating invitations, declining calls, etc.
 class Call {
+  /// Creates a call instance.
   Call(
     this.txSocket,
     this._txClient,
@@ -103,8 +105,9 @@ class Call {
     this.ringBackFile,
     this.callHandler,
     this.callEnded,
-    this.debug,
-  );
+    this.debug, {
+    AudioService? audioService,
+  }) : _audioService = audioService;
 
   /// **CallHandler Instance - Single Source of Truth for State Management**
   ///
@@ -136,6 +139,10 @@ class Call {
   /// AudioService instance to handle audio playback (lazy initialized)
   AudioService get audioService => _audioService ??= AudioService();
   AudioService? _audioService;
+
+  /// Whether this call has allocated audio playback resources.
+  @visibleForTesting
+  bool get hasAudioService => _audioService != null;
 
   /// Debug mode flag to enable call quality metrics
   final bool debug;
@@ -416,18 +423,26 @@ class Call {
     // Determine direction based on whether we have a destination number
     // If sessionDestinationNumber is set, it's an outbound call
     // If sessionCallerNumber is set but not destination, it's likely inbound
-    final direction = sessionDestinationNumber.isNotEmpty ? 'outbound' : 'inbound';
-    
+    final direction =
+        sessionDestinationNumber.isNotEmpty ? 'outbound' : 'inbound';
+
     // Post call report (don't block call cleanup on network issues)
-    peerConnection!.postCallReport(
-      callId: callId!,
-      direction: direction,
-      destinationNumber: sessionDestinationNumber.isNotEmpty ? sessionDestinationNumber : null,
-      callerNumber: sessionCallerNumber.isNotEmpty ? sessionCallerNumber : null,
-      state: callState.toString().split('.').last,
-    ).catchError((error) {
-      GlobalLogger().e('Failed to post call report: $error');
-    });
+    unawaited(
+      peerConnection!
+          .postCallReport(
+        callId: callId!,
+        direction: direction,
+        destinationNumber: sessionDestinationNumber.isNotEmpty
+            ? sessionDestinationNumber
+            : null,
+        callerNumber:
+            sessionCallerNumber.isNotEmpty ? sessionCallerNumber : null,
+        state: callState.toString().split('.').last,
+      )
+          .catchError((error) {
+        GlobalLogger().e('Failed to post call report: $error');
+      }),
+    );
   }
 
   /// Sends a DTMF message with the chosen [tone] to the call
@@ -583,7 +598,8 @@ class Call {
     String message, {
     List<String>? base64Images,
     @Deprecated(
-        'Use base64Images parameter instead for better support of multiple images')
+      'Use base64Images parameter instead for better support of multiple images',
+    )
     String? base64Image,
   }) {
     final uuid = const Uuid().v4();
@@ -615,10 +631,12 @@ class Call {
             imageDataUrl = 'data:image/jpeg;base64,$imageData';
           }
 
-          content.add(ConversationContentData(
-            type: 'image_url',
-            imageUrl: ConversationImageUrl(url: imageDataUrl),
-          ));
+          content.add(
+            ConversationContentData(
+              type: 'image_url',
+              imageUrl: ConversationImageUrl(url: imageDataUrl),
+            ),
+          );
         }
       }
     }
@@ -665,26 +683,124 @@ class Call {
 
   /// Stops the currently playing audio.
   void stopAudio() {
-    audioService.stopAudio();
+    unawaited(_audioService?.stopAudio());
   }
+
+  void _disposeAudio() {
+    final audioService = _audioService;
+    if (audioService == null) {
+      return;
+    }
+
+    unawaited(audioService.dispose());
+    _audioService = null;
+  }
+}
+
+/// Factory for creating audio playback adapters.
+typedef AudioPlaybackFactory = AudioPlayback Function();
+
+/// Minimal playback surface used by [AudioService].
+abstract class AudioPlayback {
+  /// Loads an asset for playback.
+  Future<void> setAsset(String filePath);
+
+  /// Sets the looping behavior.
+  Future<void> setLoopMode(LoopMode loopMode);
+
+  /// Starts playback.
+  Future<void> play();
+
+  /// Stops playback.
+  Future<void> stop();
+
+  /// Releases playback resources.
+  Future<void> dispose();
+}
+
+/// just_audio-backed playback adapter.
+class JustAudioPlayback implements AudioPlayback {
+  /// Creates a playback adapter.
+  JustAudioPlayback({AudioPlayer? audioPlayer})
+      : _audioPlayer = audioPlayer ?? AudioPlayer();
+
+  final AudioPlayer _audioPlayer;
+
+  @override
+  Future<void> setAsset(String filePath) => _audioPlayer.setAsset(filePath);
+
+  @override
+  Future<void> setLoopMode(LoopMode loopMode) =>
+      _audioPlayer.setLoopMode(loopMode);
+
+  @override
+  Future<void> play() => _audioPlayer.play();
+
+  @override
+  Future<void> stop() => _audioPlayer.stop();
+
+  @override
+  Future<void> dispose() => _audioPlayer.dispose();
 }
 
 /// AudioService class to handle audio playback
 class AudioService {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  /// Creates an audio service.
+  AudioService({AudioPlaybackFactory? playbackFactory})
+      : _playbackFactory = playbackFactory ?? (() => JustAudioPlayback()) {
+    _playback = _playbackFactory();
+  }
+
+  final AudioPlaybackFactory _playbackFactory;
+  late AudioPlayback _playback;
+  bool _isDisposed = false;
+  int _playGeneration = 0;
 
   /// Plays a local audio file from the assets directory.
   Future<void> playLocalFile(String filePath) async {
+    if (_isDisposed) {
+      _playback = _playbackFactory();
+      _isDisposed = false;
+    }
+
+    final playGeneration = ++_playGeneration;
+    final playback = _playback;
+
     // Ensure the file path is correct and accessible from the web directory
-    await _audioPlayer.setAsset(filePath);
-    await _audioPlayer.setLoopMode(LoopMode.all);
-    await _audioPlayer.play();
+    await playback.setAsset(filePath);
+    if (!_isCurrentPlay(playGeneration, playback)) return;
+
+    await playback.setLoopMode(LoopMode.all);
+    if (!_isCurrentPlay(playGeneration, playback)) return;
+
+    await playback.play();
   }
 
   /// Stops the currently playing audio.
   Future<void> stopAudio() async {
+    _playGeneration++;
+    if (_isDisposed) {
+      return;
+    }
+
     // Ensure the file path is correct and accessible from the web directory
-    await _audioPlayer.stop();
-    await _audioPlayer.dispose();
+    await _playback.stop();
+  }
+
+  /// Releases audio playback resources.
+  Future<void> dispose() async {
+    _playGeneration++;
+    if (_isDisposed) {
+      return;
+    }
+
+    await _playback.dispose();
+    _isDisposed = true;
+  }
+
+  bool _isCurrentPlay(int generation, AudioPlayback playback) {
+    return !_isDisposed &&
+        generation == _playGeneration &&
+        identical(_playback, playback);
   }
 }

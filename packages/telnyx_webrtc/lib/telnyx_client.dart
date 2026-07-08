@@ -171,7 +171,7 @@ class TelnyxClient {
 
   /// The WebSocket host URL for deriving the call report endpoint.
   String? _socketHost;
-  
+
   /// Gets the WebSocket host URL (used for call report endpoint derivation).
   String? get socketHost => _socketHost;
 
@@ -557,7 +557,7 @@ class TelnyxClient {
   void _handleNetworkLost() {
     _updateConnectionState(false);
     for (var call in activeCalls().values) {
-      call.callHandler.onCallStateChanged.call(
+      call.callHandler.changeState(
         CallState.dropped.withNetworkReason(NetworkReason.networkLost),
       );
       // Start a reconnection timeout timer for this call
@@ -571,7 +571,7 @@ class TelnyxClient {
       GlobalLogger()
           .i('AutoReconnect is disabled, not attempting network reconnection');
       for (var call in activeCalls().values) {
-        call.callHandler.onCallStateChanged.call(
+        call.callHandler.changeState(
           CallState.dropped.withNetworkReason(NetworkReason.networkLost),
         );
         call.endCall();
@@ -586,7 +586,7 @@ class TelnyxClient {
 
     for (var call in activeCalls().values) {
       if (call.callState.isDropped) {
-        call.callHandler.onCallStateChanged.call(
+        call.callHandler.changeState(
           CallState.reconnecting.withNetworkReason(reason),
         );
 
@@ -618,7 +618,7 @@ class TelnyxClient {
           GlobalLogger().i('Reconnection timeout for call ${call.callId}');
 
           // Change the call state to dropped
-          call.callHandler.onCallStateChanged.call(
+          call.callHandler.changeState(
             CallState.dropped.withNetworkReason(NetworkReason.networkLost),
           );
 
@@ -1083,7 +1083,8 @@ class TelnyxClient {
           GlobalLogger().i(
             'TelnyxClient.connectWithToken (via _onOpen): Web Socket is now connected',
           );
-          latencyTracker.markRegistrationMilestone(LatencyTracker.milestoneSocketConnected);
+          latencyTracker.markRegistrationMilestone(
+              LatencyTracker.milestoneSocketConnected);
           _onOpen();
           tokenLogin(tokenConfig);
         }
@@ -1146,7 +1147,8 @@ class TelnyxClient {
           GlobalLogger().i(
             'TelnyxClient.connectWithCredential (via _onOpen): Web Socket is now connected',
           );
-          latencyTracker.markRegistrationMilestone(LatencyTracker.milestoneSocketConnected);
+          latencyTracker.markRegistrationMilestone(
+              LatencyTracker.milestoneSocketConnected);
           _onOpen();
           credentialLogin(credentialConfig);
         }
@@ -1620,7 +1622,8 @@ class TelnyxClient {
     inviteCall.peerConnection?.setCallReportConfig(
       callReportInterval: callReportConfig?.callReportInterval ?? 5000,
       callReportLogLevel: callReportConfig?.callReportLogLevel ?? 'debug',
-      callReportMaxLogEntries: callReportConfig?.callReportMaxLogEntries ?? 1000,
+      callReportMaxLogEntries:
+          callReportConfig?.callReportMaxLogEntries ?? 1000,
     );
     // Convert AudioCodec objects to Map format for the peer connection
     List<Map<String, dynamic>>? codecMaps;
@@ -1719,11 +1722,13 @@ class TelnyxClient {
       _getEffectiveIceServers(),
     );
     // Apply call report config from stored config
-    final answerCallReportConfig = _storedCredentialConfig ?? _storedTokenConfig;
+    final answerCallReportConfig =
+        _storedCredentialConfig ?? _storedTokenConfig;
     answerCall.peerConnection?.setCallReportConfig(
       callReportInterval: answerCallReportConfig?.callReportInterval ?? 5000,
       callReportLogLevel: answerCallReportConfig?.callReportLogLevel ?? 'debug',
-      callReportMaxLogEntries: answerCallReportConfig?.callReportMaxLogEntries ?? 1000,
+      callReportMaxLogEntries:
+          answerCallReportConfig?.callReportMaxLogEntries ?? 1000,
     );
 
     // Set up the session with the callback if debug is enabled
@@ -2068,14 +2073,16 @@ class TelnyxClient {
                       _invalidateGatewayResponseTimer();
                       _resetGatewayCounters();
                       gatewayState = GatewayState.reged;
-                      
+
                       // Complete registration latency tracking
                       latencyTracker.completeRegistrationTracking();
-                      
+
                       // Store call_report_id for call report authentication
-                      callReportId = stateMessage.resultParams?.stateParams?.callReportId;
+                      callReportId =
+                          stateMessage.resultParams?.stateParams?.callReportId;
                       if (callReportId != null) {
-                        GlobalLogger().d('CallReportId received: $callReportId');
+                        GlobalLogger()
+                            .d('CallReportId received: $callReportId');
                       }
                       _waitingForReg = false;
                       final message = TelnyxMessage(
@@ -2457,7 +2464,8 @@ class TelnyxClient {
 
                   // Mark latency milestones for answer received
                   if (answerCall.callId != null) {
-                    latencyTracker.markCallMilestone(answerCall.callId!, LatencyTracker.milestoneRemoteSdpReceived);
+                    latencyTracker.markCallMilestone(answerCall.callId!,
+                        LatencyTracker.milestoneRemoteSdpReceived);
                     latencyTracker.markCallAnsweredByRemote(answerCall.callId!);
                   }
 
