@@ -8,10 +8,38 @@ import 'package:logger/logger.dart';
 import 'package:telnyx_flutter_webrtc/main.dart'; // For logger, txClientViewModel, handlePush
 import 'package:telnyx_flutter_webrtc/service/push_notification_handler.dart';
 import 'package:telnyx_webrtc/telnyx_client.dart';
+import 'package:telnyx_webrtc/model/connection_status.dart';
 import 'package:telnyx_webrtc/model/push_notification.dart';
 import 'package:telnyx_webrtc/config/telnyx_config.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:telnyx_flutter_webrtc/utils/config_helper.dart';
+
+void _disposeTemporaryDeclineClientAfterDisconnect(TelnyxClient client) {
+  var sawOpenConnection = false;
+  var disposed = false;
+  late final Timer fallbackTimer;
+
+  void disposeOnce() {
+    if (disposed) return;
+
+    disposed = true;
+    fallbackTimer.cancel();
+    client.dispose();
+  }
+
+  fallbackTimer = Timer(const Duration(seconds: 10), disposeOnce);
+  client.onConnectionStateChanged = (ConnectionStatus status) {
+    if (status == ConnectionStatus.connected ||
+        status == ConnectionStatus.clientReady) {
+      sawOpenConnection = true;
+      return;
+    }
+
+    if (sawOpenConnection && status == ConnectionStatus.disconnected) {
+      disposeOnce();
+    }
+  };
+}
 
 /// iOS specific implementation of [PushNotificationHandler].
 class IOSPushNotificationHandler implements PushNotificationHandler {
@@ -133,20 +161,31 @@ class IOSPushNotificationHandler implements PushNotificationHandler {
             final PushMetaData pushMetaData = PushMetaData.fromJson(eventData)
               ..isDecline = true;
             final tempDeclineClient = TelnyxClient();
-            final config = await ConfigHelper.getTelnyxConfigFromPrefs();
-            _logger.i(
-              '[PushNotificationHandler-iOS] actionCallDecline: Temp client attempting to handlePushNotification. Config :: $config',
-            );
-            if (config != null) {
-              tempDeclineClient.handlePushNotification(
-                pushMetaData,
-                config is CredentialConfig ? config : null,
-                config is TokenConfig ? config : null,
+            var cleanupArmed = false;
+            try {
+              final config = await ConfigHelper.getTelnyxConfigFromPrefs();
+              _logger.i(
+                '[PushNotificationHandler-iOS] actionCallDecline: Temp client attempting to handlePushNotification. Config :: $config',
               );
-            } else {
-              _logger.e(
-                '[PushNotificationHandler-iOS] actionCallDecline: Could not get config for temp client.',
-              );
+              if (config != null) {
+                _disposeTemporaryDeclineClientAfterDisconnect(
+                  tempDeclineClient,
+                );
+                cleanupArmed = true;
+                tempDeclineClient.handlePushNotification(
+                  pushMetaData,
+                  config is CredentialConfig ? config : null,
+                  config is TokenConfig ? config : null,
+                );
+              } else {
+                _logger.e(
+                  '[PushNotificationHandler-iOS] actionCallDecline: Could not get config for temp client.',
+                );
+              }
+            } finally {
+              if (!cleanupArmed) {
+                tempDeclineClient.dispose();
+              }
             }
           }
           break;

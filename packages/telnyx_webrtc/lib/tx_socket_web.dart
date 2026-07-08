@@ -22,47 +22,77 @@ class TxSocket with TxSocketPingMetricsMixin {
 
   String hostAddress;
 
-  late WebSocket _socket;
+  WebSocket? _socket;
   late OnOpenCallback onOpen;
   late OnMessageCallback onMessage;
   late OnCloseCallback onClose;
+  int _connectGeneration = 0;
 
   /// Connect to the WebSocket server
-  void connect() async {
-    try {
-      _socket = WebSocket(hostAddress);
+  void connect() {
+    final generation = ++_connectGeneration;
+    final openCallback = onOpen;
+    final messageCallback = onMessage;
+    final closeCallback = onClose;
 
-      _socket.onOpen.listen((e) {
+    try {
+      final socket = WebSocket(hostAddress);
+
+      socket.onOpen.listen((e) {
+        if (!_isCurrentAttempt(generation)) {
+          socket.close();
+          return;
+        }
+
+        _socket = socket;
+
         // Initialize connection tracking
         initializePingTracking();
-        onOpen.call();
 
-        // Emit initial calculating state
-        emitInitialMetrics();
+        openCallback.call();
+        if (_isActiveSocket(generation, socket)) {
+          // Emit initial calculating state
+          emitInitialMetrics();
+        } else {
+          socket.close();
+        }
       });
 
-      _socket.onMessage.listen((e) {
+      socket.onMessage.listen((e) {
+        if (!_isActiveSocket(generation, socket)) return;
+
         // Check if this is a ping/pong message
         if (isPingMessage(e.data)) {
           handlePingReceived();
         }
-        onMessage.call(e.data);
+        messageCallback.call(e.data);
       });
 
-      _socket.onClose.listen((e) {
+      socket.onClose.listen((e) {
+        if (!_isActiveSocket(generation, socket)) return;
+
         cleanPingIntervals();
-        onClose.call(e.code ?? 0, e.reason ?? 'Closed for unknown reason');
+        closeCallback.call(
+          e.code ?? 0,
+          e.reason ?? 'Closed for unknown reason',
+        );
+        if (identical(_socket, socket)) {
+          _socket = null;
+        }
       });
     } catch (e) {
+      if (!_isCurrentAttempt(generation)) return;
+
       cleanPingIntervals();
-      onClose.call(500, e.toString());
+      closeCallback.call(500, e.toString());
     }
   }
 
   /// Send data to the WebSocket server
   void send(data) {
-    if (_socket.readyState == WebSocket.OPEN) {
-      _socket.send(data);
+    final socket = _socket;
+    if (socket != null && socket.readyState == WebSocket.OPEN) {
+      socket.send(data);
       GlobalLogger().i('TxSocket :: Send : ${data?.toString().trim()}');
     } else {
       GlobalLogger().d('WebSocket not connected, message $data not sent');
@@ -71,7 +101,18 @@ class TxSocket with TxSocketPingMetricsMixin {
 
   /// Close the WebSocket connection
   void close() {
+    _connectGeneration++;
     cleanPingIntervals();
-    _socket.close();
+    final socket = _socket;
+    _socket = null;
+    socket?.close();
+  }
+
+  bool _isCurrentAttempt(int generation) {
+    return generation == _connectGeneration;
+  }
+
+  bool _isActiveSocket(int generation, WebSocket socket) {
+    return _isCurrentAttempt(generation) && identical(_socket, socket);
   }
 }

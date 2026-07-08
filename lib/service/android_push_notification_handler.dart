@@ -7,6 +7,7 @@ import 'package:telnyx_flutter_webrtc/main.dart'; // For logger, txClientViewMod
 import 'package:telnyx_flutter_webrtc/service/notification_service.dart';
 import 'package:telnyx_flutter_webrtc/service/push_notification_handler.dart';
 import 'package:telnyx_webrtc/telnyx_client.dart';
+import 'package:telnyx_webrtc/model/connection_status.dart';
 import 'package:telnyx_webrtc/model/push_notification.dart';
 import 'package:telnyx_webrtc/config/telnyx_config.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
@@ -17,6 +18,33 @@ import 'package:telnyx_flutter_webrtc/utils/config_helper.dart';
 
 // Define logger at the top level for access by the background handler function
 final _backgroundLogger = Logger();
+
+void _disposeTemporaryDeclineClientAfterDisconnect(TelnyxClient client) {
+  var sawOpenConnection = false;
+  var disposed = false;
+  late final Timer fallbackTimer;
+
+  void disposeOnce() {
+    if (disposed) return;
+
+    disposed = true;
+    fallbackTimer.cancel();
+    client.dispose();
+  }
+
+  fallbackTimer = Timer(const Duration(seconds: 10), disposeOnce);
+  client.onConnectionStateChanged = (ConnectionStatus status) {
+    if (status == ConnectionStatus.connected ||
+        status == ConnectionStatus.clientReady) {
+      sawOpenConnection = true;
+      return;
+    }
+
+    if (sawOpenConnection && status == ConnectionStatus.disconnected) {
+      disposeOnce();
+    }
+  };
+}
 
 // This function MUST be annotated with @pragma('vm:entry-point') and be a top level function
 @pragma('vm:entry-point')
@@ -66,22 +94,32 @@ Future<void> androidBackgroundMessageHandler(RemoteMessage message) async {
             final PushMetaData pushMetaData = PushMetaData.fromJson(metadataMap)
               ..isDecline = true;
 
-            // Use simplified decline logic with decline_push parameter
             final tempDeclineClient = TelnyxClient();
-            final config = await ConfigHelper.getTelnyxConfigFromPrefs();
-            if (config != null) {
-              _backgroundLogger.i(
-                '[AndroidBackgroundHandler] Using simplified decline logic with decline_push parameter.',
-              );
-              tempDeclineClient.handlePushNotification(
-                pushMetaData,
-                config is CredentialConfig ? config : null,
-                config is TokenConfig ? config : null,
-              );
-            } else {
-              _backgroundLogger.e(
-                '[AndroidBackgroundHandler] Could not retrieve config from SharedPreferences. Cannot decline call.',
-              );
+            var cleanupArmed = false;
+            try {
+              final config = await ConfigHelper.getTelnyxConfigFromPrefs();
+              if (config != null) {
+                _backgroundLogger.i(
+                  '[AndroidBackgroundHandler] Using simplified decline logic with decline_push parameter.',
+                );
+                _disposeTemporaryDeclineClientAfterDisconnect(
+                  tempDeclineClient,
+                );
+                cleanupArmed = true;
+                tempDeclineClient.handlePushNotification(
+                  pushMetaData,
+                  config is CredentialConfig ? config : null,
+                  config is TokenConfig ? config : null,
+                );
+              } else {
+                _backgroundLogger.e(
+                  '[AndroidBackgroundHandler] Could not retrieve config from SharedPreferences. Cannot decline call.',
+                );
+              }
+            } finally {
+              if (!cleanupArmed) {
+                tempDeclineClient.dispose();
+              }
             }
           } catch (e) {
             _backgroundLogger.e(
