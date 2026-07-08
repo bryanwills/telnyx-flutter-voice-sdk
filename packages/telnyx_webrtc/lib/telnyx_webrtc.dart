@@ -1,5 +1,7 @@
 library;
 
+export './call.dart';
+export './call_manager.dart';
 export './config/telnyx_config.dart';
 
 export './model/audio_codec.dart';
@@ -37,3 +39,5 @@ export './utils/stats/call_report_log_collector.dart';
 
 export './model/latency_metrics.dart';
 export './utils/latency_tracker.dart';
+
+export './telnyx_client.dart';

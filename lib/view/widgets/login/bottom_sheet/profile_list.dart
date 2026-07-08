@@ -31,32 +31,37 @@ class ProfileList extends StatelessWidget {
             final isSelected = provider.selectedProfile?.sipCallerIDName ==
                 profile.sipCallerIDName;
 
-            return ListTile(
-              title: Text(profile.sipCallerIDName),
-              subtitle: Text(profile.isTokenLogin ? 'Token' : 'Credentials'),
-              selected: isSelected,
-              selectedTileColor: Theme.of(context).colorScheme.surface,
-              leading: Icon(
-                profile.isTokenLogin ? Icons.key : Icons.person,
-                color: isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).iconTheme.color,
+            return Semantics(
+              identifier: 'profile_tile_${profile.sipCallerIDName}',
+              container: true,
+              child: ListTile(
+                key: ValueKey('profile_tile_${profile.sipCallerIDName}'),
+                title: Text(profile.sipCallerIDName),
+                subtitle: Text(profile.isTokenLogin ? 'Token' : 'Credentials'),
+                selected: isSelected,
+                selectedTileColor: Theme.of(context).colorScheme.surface,
+                leading: Icon(
+                  profile.isTokenLogin ? Icons.key : Icons.person,
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).iconTheme.color,
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: SvgPicture.asset(edit_icon, width: 16, height: 16),
+                      onPressed: () => onProfileEditSelected(profile),
+                    ),
+                    IconButton(
+                      icon: SvgPicture.asset(delete_icon, width: 16, height: 16),
+                      onPressed: () =>
+                          provider.removeProfile(profile.sipCallerIDName),
+                    ),
+                  ],
+                ),
+                onTap: () => provider.selectProfile(profile.sipCallerIDName),
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: SvgPicture.asset(edit_icon, width: 16, height: 16),
-                    onPressed: () => onProfileEditSelected(profile),
-                  ),
-                  IconButton(
-                    icon: SvgPicture.asset(delete_icon, width: 16, height: 16),
-                    onPressed: () =>
-                        provider.removeProfile(profile.sipCallerIDName),
-                  ),
-                ],
-              ),
-              onTap: () => provider.selectProfile(profile.sipCallerIDName),
             );
           },
         );

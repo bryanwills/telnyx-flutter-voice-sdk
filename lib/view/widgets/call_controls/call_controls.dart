@@ -136,32 +136,37 @@ class _CallControlsState extends State<CallControls> {
         if (!isAssistantMode) ...[
           Padding(
             padding: const EdgeInsets.all(spacingXS),
-            child: TextFormField(
-              key: const Key('destination_field'),
-              readOnly: clientState != CallStateStatus.idle,
-              enabled: clientState == CallStateStatus.idle,
-              controller: _destinationController,
-              keyboardType:
-                  _isPhoneNumber ? TextInputType.phone : TextInputType.text,
-              inputFormatters: _isPhoneNumber
-                  ? [
-                      FilteringTextInputFormatter.allow(
-                          RegExp(r'[0-9+\-\s\(\)]'))
-                    ]
-                  : [
-                      FilteringTextInputFormatter.allow(
-                        RegExp(r'[a-zA-Z0-9@\.\-_]'),
-                      ),
-                    ],
-              decoration: InputDecoration(
-                hintStyle: Theme.of(context).textTheme.labelSmall,
-                hintText: _isPhoneNumber ? '+E164 phone number' : 'SIP address',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(spacingS),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: active_text_field_color),
-                  borderRadius: BorderRadius.circular(spacingS),
+            child: Semantics(
+              identifier: 'destination_field',
+              container: true,
+              child: TextFormField(
+                key: const Key('destination_field'),
+                readOnly: clientState != CallStateStatus.idle,
+                enabled: clientState == CallStateStatus.idle,
+                controller: _destinationController,
+                keyboardType:
+                    _isPhoneNumber ? TextInputType.phone : TextInputType.text,
+                inputFormatters: _isPhoneNumber
+                    ? [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'[0-9+\-\s\(\)]'))
+                      ]
+                    : [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[a-zA-Z0-9@\.\-_]'),
+                        ),
+                      ],
+                decoration: InputDecoration(
+                  hintStyle: Theme.of(context).textTheme.labelSmall,
+                  hintText:
+                      _isPhoneNumber ? '+E164 phone number' : 'SIP address',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(spacingS),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: active_text_field_color),
+                    borderRadius: BorderRadius.circular(spacingS),
+                  ),
                 ),
               ),
             ),
@@ -191,35 +196,62 @@ class _CallControlsState extends State<CallControls> {
                       ),
                     ),
                   )
-                : CallButton(
-                    onPressed: () {
-                      final destination = _destinationController.text;
-                      if (destination.isNotEmpty) {
-                        context.read<TelnyxClientViewModel>().call(destination);
-                      }
-                    },
+                : Semantics(
+                    identifier: 'call_button',
+                    container: true,
+                    child: CallButton(
+                      key: const ValueKey('call_button'),
+                      onPressed: () {
+                        final destination = _destinationController.text;
+                        if (destination.isNotEmpty) {
+                          context.read<TelnyxClientViewModel>().call(
+                            destination,
+                          );
+                        }
+                      },
+                    ),
                   ),
           ),
           const SizedBox(height: spacingL),
           const Center(child: CallHistoryButton()),
         ] else if (clientState == CallStateStatus.ringing)
           Center(
-            child: DeclineButton(
-              onPressed: () {
-                context.read<TelnyxClientViewModel>().endCall();
-              },
+            child: Semantics(
+              identifier: 'cancel_call_button',
+              container: true,
+              child: DeclineButton(
+                onPressed: () {
+                  context.read<TelnyxClientViewModel>().endCall();
+                },
+              ),
             ),
           )
         else if (clientState == CallStateStatus.ongoingInvitation)
           Center(
-            child: CallInvitation(
-              onAccept: () {
-                context.read<TelnyxClientViewModel>().accept();
-              },
-              onDecline: () {
-                context.read<TelnyxClientViewModel>().endCall();
-              },
-            ),
+            child: Builder(builder: (context) {
+              final hasActiveCall = context.select<TelnyxClientViewModel, bool>(
+                (vm) => vm.hasActiveCall,
+              );
+              return CallInvitation(
+                onAccept: () {
+                  context.read<TelnyxClientViewModel>().accept();
+                },
+                onDecline: () {
+                  if (hasActiveCall) {
+                    context.read<TelnyxClientViewModel>().rejectIncomingCall();
+                  } else {
+                    context.read<TelnyxClientViewModel>().endCall();
+                  }
+                },
+                hasActiveCall: hasActiveCall,
+                onHoldAndAccept: () {
+                  context.read<TelnyxClientViewModel>().holdCurrentAndAcceptIncoming();
+                },
+                onEndAndAccept: () {
+                  context.read<TelnyxClientViewModel>().endCurrentAndAcceptIncoming();
+                },
+              );
+            }),
           )
         else if (clientState == CallStateStatus.connectingToCall)
           Center(child: CircularProgressIndicator())

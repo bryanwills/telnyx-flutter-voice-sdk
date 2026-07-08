@@ -367,27 +367,32 @@ class _HomeScreenState extends State<HomeScreen> {
                     final selectedProfile = profileProvider.selectedProfile;
                     return Padding(
                       padding: const EdgeInsets.all(spacingXXL),
-                      child: BottomConnectionActionWidget(
-                        buttonTitle: 'Connect',
-                        isLoading: viewModel.loggingIn,
-                        onPressed: selectedProfile != null
-                            ? () async {
-                                // Apply environment setting before connecting
-                                final profileProvider =
-                                    context.read<ProfileProvider>();
-                                viewModel.setDevEnvironment(
-                                  profileProvider.isDevEnvironment,
-                                );
+                      child: Semantics(
+                        identifier: 'connect_button',
+                        container: true,
+                        child: BottomConnectionActionWidget(
+                          key: const ValueKey('connect_button'),
+                          buttonTitle: 'Connect',
+                          isLoading: viewModel.loggingIn,
+                          onPressed: selectedProfile != null
+                              ? () async {
+                                  // Apply environment setting before connecting
+                                  final profileProvider =
+                                      context.read<ProfileProvider>();
+                                  viewModel.setDevEnvironment(
+                                    profileProvider.isDevEnvironment,
+                                  );
 
-                                final config =
-                                    await selectedProfile.toTelnyxConfig();
-                                if (config is TokenConfig) {
-                                  viewModel.loginWithToken(config);
-                                } else if (config is CredentialConfig) {
-                                  viewModel.login(config);
+                                  final config =
+                                      await selectedProfile.toTelnyxConfig();
+                                  if (config is TokenConfig) {
+                                    viewModel.loginWithToken(config);
+                                  } else if (config is CredentialConfig) {
+                                    viewModel.login(config);
+                                  }
                                 }
-                              }
-                            : null,
+                              : null,
+                        ),
                       ),
                     );
                   },

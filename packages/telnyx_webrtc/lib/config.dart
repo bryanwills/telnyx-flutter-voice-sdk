@@ -19,6 +19,11 @@ class DefaultConfig {
   /// Production TURN server with UDP transport (preferred for lower latency)
   static const String defaultTurnUdp = 'turn:turn.telnyx.com:3478?transport=udp';
 
+  /// Production TURNS server with TCP transport over TLS on port 443
+  /// (last-resort fallback for restrictive firewalls that block non-443 traffic)
+  static const String defaultTurns443 =
+      'turns:turn.telnyx.com:443?transport=tcp';
+
   /// Production STUN server
   static const String defaultStun = 'stun:stun.telnyx.com:3478';
 
@@ -28,6 +33,11 @@ class DefaultConfig {
 
   /// Development TURN server with UDP transport
   static const String devTurnUdp = 'turn:turndev.telnyx.com:3478?transport=udp';
+
+  /// Development TURNS server with TCP transport over TLS on port 443
+  /// (last-resort fallback for restrictive firewalls that block non-443 traffic)
+  static const String devTurns443 =
+      'turns:turndev.telnyx.com:443?transport=tcp';
 
   /// Development STUN server
   static const String devStun = 'stun:stundev.telnyx.com:3478';
@@ -49,6 +59,8 @@ class DefaultConfig {
   /// - Google STUN server (fallback)
   /// - Telnyx TURN server with UDP transport (preferred)
   /// - Telnyx TURN server with TCP transport (fallback)
+  /// - Telnyx TURNS server with TCP transport over TLS on port 443
+  ///   (last-resort fallback for restrictive firewalls)
   static List<TxIceServer> get defaultProdIceServers => [
         const TxIceServer(urls: [defaultStun]),
         const TxIceServer(urls: [googleStun]),
@@ -62,6 +74,12 @@ class DefaultConfig {
           username: username,
           credential: password,
         ),
+        // TURNS 443 (last-resort fallback for restrictive firewalls)
+        TxIceServer(
+          urls: [defaultTurns443],
+          username: username,
+          credential: password,
+        ),
       ];
 
   /// Default development ICE servers configuration.
@@ -71,6 +89,8 @@ class DefaultConfig {
   /// - Google STUN server (fallback)
   /// - Telnyx dev TURN server with UDP transport (preferred)
   /// - Telnyx dev TURN server with TCP transport (fallback)
+  /// - Telnyx dev TURNS server with TCP transport over TLS on port 443
+  ///   (last-resort fallback for restrictive firewalls)
   static List<TxIceServer> get defaultDevIceServers => [
         const TxIceServer(urls: [devStun]),
         const TxIceServer(urls: [googleStun]),
@@ -81,6 +101,12 @@ class DefaultConfig {
         ),
         TxIceServer(
           urls: [devTurn],
+          username: username,
+          credential: password,
+        ),
+        // TURNS 443 (last-resort fallback for restrictive firewalls)
+        TxIceServer(
+          urls: [devTurns443],
           username: username,
           credential: password,
         ),
