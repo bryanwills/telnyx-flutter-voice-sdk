@@ -98,7 +98,7 @@ class Peer {
 
   /// Optional stats reporter (for debug).
   WebRTCStatsReporter? _statsManager;
-  
+
   /// Call report collector (always enabled for post-call reporting).
   CallReportCollector? _callReportCollector;
   CallReportLogCollector? _callReportLogCollector;
@@ -107,14 +107,29 @@ class Peer {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
 
+  /// Called when the signaling state of the peer changes.
   Function(SignalingState state)? onSignalingStateChange;
+
+  /// Called when the call state changes for a given session.
   Function(Session session, CallState state)? onCallStateChange;
+
+  /// Called when the local media stream becomes available.
   Function(MediaStream stream)? onLocalStream;
+
+  /// Called when a remote media stream is added to a session.
   Function(Session session, MediaStream stream)? onAddRemoteStream;
+
+  /// Called when a remote media stream is removed from a session.
   Function(Session session, MediaStream stream)? onRemoveRemoteStream;
+
+  /// Called when the set of active peers is updated.
   Function(dynamic event)? onPeersUpdate;
+
+  /// Called when a data channel message is received for a session.
   Function(Session session, RTCDataChannel dc, RTCDataChannelMessage data)?
       onDataChannelMessage;
+
+  /// Called when a data channel is opened for a session.
   Function(Session session, RTCDataChannel dc)? onDataChannel;
 
   /// Callback for call quality metrics updates.
@@ -225,7 +240,8 @@ class Peer {
           audioTracks[0].enableSpeakerphone(enable);
         } else {
           GlobalLogger().w(
-              'Peer :: No audio tracks available :: Unable to toggle speaker mode');
+            'Peer :: No audio tracks available :: Unable to toggle speaker mode',
+          );
         }
       }
       return;
@@ -238,7 +254,8 @@ class Peer {
         GlobalLogger().d('Peer :: Speaker Enabled :: $enable');
       } else {
         GlobalLogger().w(
-            'Peer :: No audio tracks available :: Unable to toggle speaker mode');
+          'Peer :: No audio tracks available :: Unable to toggle speaker mode',
+        );
       }
     } else {
       GlobalLogger().d(
@@ -455,10 +472,10 @@ class Peer {
   /// [sdp] The SDP string of the remote description.
   void remoteSessionReceived(String sdp) async {
     CallTimingBenchmark.start(isOutbound: true);
-    
+
     // Extract and cache remote ICE candidates from the SDP
     _callReportCollector?.cacheIceCandidatesFromSdp(sdp, isLocal: false);
-    
+
     final session = _sessions[_selfId];
     if (session != null) {
       await session.peerConnection?.setRemoteDescription(
@@ -527,7 +544,10 @@ class Peer {
 
     // Extract and cache remote ICE candidates from the SDP
     if (invite.sdp != null) {
-      _callReportCollector?.cacheIceCandidatesFromSdp(invite.sdp!, isLocal: false);
+      _callReportCollector?.cacheIceCandidatesFromSdp(
+        invite.sdp!,
+        isLocal: false,
+      );
     }
 
     // Set the remote SDP from the inbound INVITE
@@ -1073,6 +1093,8 @@ class Peer {
   /// Get the log collector for external event logging
   CallReportLogCollector? get callReportLogCollector => _callReportLogCollector;
 
+  /// Starts collecting WebRTC statistics for the given call and peer
+  /// connection, reporting call quality updates via [onCallQualityChange].
   Future<bool> startStats(
     String callId,
     String peerId,
@@ -1161,12 +1183,14 @@ class Peer {
     final host = _txClient.socketHost;
 
     if (callReportId == null) {
-      GlobalLogger().d('Peer :: Cannot post call report: callReportId not available');
+      GlobalLogger()
+          .d('Peer :: Cannot post call report: callReportId not available');
       return;
     }
 
     if (host == null) {
-      GlobalLogger().e('Peer :: Cannot post call report: socket host not available');
+      GlobalLogger()
+          .e('Peer :: Cannot post call report: socket host not available');
       return;
     }
 
@@ -1230,7 +1254,7 @@ class Peer {
       _localStream = null;
     }
     // Stop stats
-    stopStats(session.sid);
+    unawaited(stopStats(session.sid));
     // Close peer connection
     if (session.peerConnection != null) {
       await session.peerConnection?.close();

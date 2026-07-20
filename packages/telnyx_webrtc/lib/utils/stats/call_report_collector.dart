@@ -3,13 +3,17 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
+import 'package:telnyx_webrtc/config/telnyx_config.dart' show Config;
+import 'package:telnyx_webrtc/config/debug_output.dart';
 import 'package:telnyx_webrtc/utils/logging/global_logger.dart';
+import 'package:telnyx_webrtc/utils/logging/log_collector.dart';
 import 'package:telnyx_webrtc/utils/stats/call_report_log_collector.dart';
 import 'package:telnyx_webrtc/utils/version_utils.dart';
 
 // Conditional import for file I/O (mobile only)
 import 'package:telnyx_webrtc/utils/stats/call_report_file_helper_stub.dart'
-    if (dart.library.io) 'package:telnyx_webrtc/utils/stats/call_report_file_helper.dart' as file_helper;
+    if (dart.library.io) 'package:telnyx_webrtc/utils/stats/call_report_file_helper.dart'
+    as file_helper;
 
 /// Configuration options for call report collection
 class CallReportOptions {
@@ -19,27 +23,73 @@ class CallReportOptions {
   /// Maximum number of stats intervals to buffer (default: 360 = 30 mins at 5s intervals)
   final int maxBufferSize;
 
+  /// Whether call report collection is enabled (default: true)
+  final bool enabled;
+
+  /// Output destination for call reports (default: [DebugOutput.socket])
+  final DebugOutput outputMode;
+
+  /// Flush interval for intermediate segments in milliseconds (default: 180000 = 3 min)
+  final int flushIntervalMs;
+
+  /// Creates a set of call report collection options with sensible defaults.
   const CallReportOptions({
     this.intervalMs = 5000,
     this.maxBufferSize = 360,
+    this.enabled = true,
+    this.outputMode = DebugOutput.socket,
+    this.flushIntervalMs = 180000,
   });
+
+  /// Create [CallReportOptions] from a [Config] instance.
+  factory CallReportOptions.fromConfig(Config config) {
+    return CallReportOptions(
+      enabled: config.enableCallReports,
+      outputMode: config.debugOutput,
+      flushIntervalMs: config.callReportFlushInterval,
+    );
+  }
 }
 
 /// Summary information about the call
 class CallSummary {
+  /// Unique identifier of the call this summary describes.
   final String callId;
+
+  /// Number that was dialed for an outbound call, if known.
   final String? destinationNumber;
+
+  /// Number of the caller for an inbound call, if known.
   final String? callerNumber;
+
+  /// Direction of the call, either `'inbound'` or `'outbound'`.
   final String direction; // 'inbound' or 'outbound'
+
+  /// Final or current state of the call (e.g. `'active'`, `'done'`).
   final String? state;
+
+  /// Total call duration in seconds, if the call has ended.
   final double? durationSeconds;
+
+  /// Telnyx session identifier associated with the call.
   final String? telnyxSessionId;
+
+  /// Telnyx leg identifier for this call leg.
   final String? telnyxLegId;
+
+  /// Voice SDK identifier used to correlate the call server-side.
   final String? voiceSdkId;
+
+  /// Version of the Telnyx WebRTC SDK that produced this report.
   final String sdkVersion;
+
+  /// UTC ISO-8601 timestamp of when the call started.
   final String? startTimestamp;
+
+  /// UTC ISO-8601 timestamp of when the call ended.
   final String? endTimestamp;
 
+  /// Creates a summary describing a single call.
   CallSummary({
     required this.callId,
     this.destinationNumber,
@@ -55,6 +105,7 @@ class CallSummary {
     this.endTimestamp,
   });
 
+  /// Serializes this summary to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         'callId': callId,
         if (destinationNumber != null) 'destinationNumber': destinationNumber,
@@ -73,12 +124,22 @@ class CallSummary {
 
 /// Stats collected during a single interval
 class StatsInterval {
+  /// UTC ISO-8601 timestamp marking the start of the interval.
   final String intervalStartUtc;
+
+  /// UTC ISO-8601 timestamp marking the end of the interval.
   final String intervalEndUtc;
+
+  /// Audio statistics aggregated over the interval, if available.
   final AudioStats? audio;
+
+  /// Connection statistics aggregated over the interval, if available.
   final ConnectionStats? connection;
+
+  /// ICE statistics captured during the interval, if available.
   final IceStats? ice;
 
+  /// Creates a stats entry covering a single collection interval.
   StatsInterval({
     required this.intervalStartUtc,
     required this.intervalEndUtc,
@@ -87,6 +148,7 @@ class StatsInterval {
     this.ice,
   });
 
+  /// Serializes this interval to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         'intervalStartUtc': intervalStartUtc,
         'intervalEndUtc': intervalEndUtc,
@@ -98,11 +160,16 @@ class StatsInterval {
 
 /// Audio statistics for inbound and outbound streams
 class AudioStats {
+  /// Statistics for the outbound (sent) audio stream, if available.
   final OutboundAudioStats? outbound;
+
+  /// Statistics for the inbound (received) audio stream, if available.
   final InboundAudioStats? inbound;
 
+  /// Creates an audio statistics container for a single interval.
   AudioStats({this.outbound, this.inbound});
 
+  /// Serializes these audio statistics to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         if (outbound != null) 'outbound': outbound!.toJson(),
         if (inbound != null) 'inbound': inbound!.toJson(),
@@ -111,11 +178,19 @@ class AudioStats {
 
 /// Outbound audio statistics
 class OutboundAudioStats {
+  /// Total number of audio packets sent.
   final int? packetsSent;
+
+  /// Total number of audio bytes sent.
   final int? bytesSent;
+
+  /// Average outbound audio level over the interval.
   final double? audioLevelAvg;
+
+  /// Average outbound bitrate in bits per second over the interval.
   final double? bitrateAvg;
 
+  /// Creates outbound audio statistics for a single interval.
   OutboundAudioStats({
     this.packetsSent,
     this.bytesSent,
@@ -123,6 +198,7 @@ class OutboundAudioStats {
     this.bitrateAvg,
   });
 
+  /// Serializes these outbound audio statistics to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         if (packetsSent != null) 'packetsSent': packetsSent,
         if (bytesSent != null) 'bytesSent': bytesSent,
@@ -133,19 +209,43 @@ class OutboundAudioStats {
 
 /// Inbound audio statistics
 class InboundAudioStats {
+  /// Total number of audio packets received.
   final int? packetsReceived;
+
+  /// Total number of audio bytes received.
   final int? bytesReceived;
+
+  /// Total number of audio packets lost in transit.
   final int? packetsLost;
+
+  /// Total number of received audio packets that were discarded.
   final int? packetsDiscarded;
+
+  /// Cumulative jitter buffer delay in seconds.
   final double? jitterBufferDelay;
+
+  /// Number of samples emitted from the jitter buffer.
   final int? jitterBufferEmittedCount;
+
+  /// Total number of audio samples received.
   final int? totalSamplesReceived;
+
+  /// Number of samples synthesized to conceal lost audio.
   final int? concealedSamples;
+
+  /// Number of concealment events used to hide packet loss.
   final int? concealmentEvents;
+
+  /// Average inbound audio level over the interval.
   final double? audioLevelAvg;
+
+  /// Average inbound jitter in milliseconds over the interval.
   final double? jitterAvg;
+
+  /// Average inbound bitrate in bits per second over the interval.
   final double? bitrateAvg;
 
+  /// Creates inbound audio statistics for a single interval.
   InboundAudioStats({
     this.packetsReceived,
     this.bytesReceived,
@@ -161,6 +261,7 @@ class InboundAudioStats {
     this.bitrateAvg,
   });
 
+  /// Serializes these inbound audio statistics to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         if (packetsReceived != null) 'packetsReceived': packetsReceived,
         if (bytesReceived != null) 'bytesReceived': bytesReceived,
@@ -181,12 +282,22 @@ class InboundAudioStats {
 
 /// Connection statistics
 class ConnectionStats {
+  /// Average round-trip time in seconds over the interval.
   final double? roundTripTimeAvg;
+
+  /// Total number of packets sent over the connection.
   final int? packetsSent;
+
+  /// Total number of packets received over the connection.
   final int? packetsReceived;
+
+  /// Total number of bytes sent over the connection.
   final int? bytesSent;
+
+  /// Total number of bytes received over the connection.
   final int? bytesReceived;
 
+  /// Creates connection statistics for a single interval.
   ConnectionStats({
     this.roundTripTimeAvg,
     this.packetsSent,
@@ -195,6 +306,7 @@ class ConnectionStats {
     this.bytesReceived,
   });
 
+  /// Serializes these connection statistics to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         if (roundTripTimeAvg != null) 'roundTripTimeAvg': roundTripTimeAvg,
         if (packetsSent != null) 'packetsSent': packetsSent,
@@ -206,15 +318,31 @@ class ConnectionStats {
 
 /// ICE candidate statistics (local or remote)
 class IceCandidateStats {
+  /// IP address of the candidate.
   final String? address;
+
+  /// Type of candidate (e.g. `'host'`, `'srflx'`, `'prflx'`, `'relay'`).
   final String? candidateType;
+
+  /// Network type the candidate was gathered on, if reported.
   final String? networkType;
+
+  /// Port number of the candidate.
   final int? port;
+
+  /// Transport protocol of the candidate (e.g. `'udp'`, `'tcp'`).
   final String? protocol;
+
+  /// Priority value assigned to the candidate.
   final int? priority;
+
+  /// Related (base) address for reflexive or relay candidates.
   final String? relatedAddress;
+
+  /// Related (base) port for reflexive or relay candidates.
   final int? relatedPort;
 
+  /// Creates statistics describing a single ICE candidate.
   IceCandidateStats({
     this.address,
     this.candidateType,
@@ -226,6 +354,7 @@ class IceCandidateStats {
     this.relatedPort,
   });
 
+  /// Serializes this ICE candidate to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         if (address != null) 'address': address,
         if (candidateType != null) 'candidateType': candidateType,
@@ -240,15 +369,31 @@ class IceCandidateStats {
 
 /// ICE connection statistics including selected candidate pair
 class IceStats {
+  /// Identifier of the selected candidate pair.
   final String? id;
+
+  /// Local candidate of the selected pair, if resolved.
   final IceCandidateStats? local;
+
+  /// Remote candidate of the selected pair, if resolved.
   final IceCandidateStats? remote;
+
+  /// Whether the candidate pair has been nominated for use.
   final bool? nominated;
+
+  /// Number of connectivity check requests sent on this pair.
   final int? requestsSent;
+
+  /// Number of connectivity check responses received on this pair.
   final int? responsesReceived;
+
+  /// State of the candidate pair (e.g. `'succeeded'`).
   final String? state;
+
+  /// Whether the candidate pair is currently writable.
   final bool? writable;
 
+  /// Creates ICE statistics for the selected candidate pair.
   IceStats({
     this.id,
     this.local,
@@ -260,6 +405,7 @@ class IceStats {
     this.writable,
   });
 
+  /// Serializes these ICE statistics to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         if (id != null) 'id': id,
         if (local != null) 'local': local!.toJson(),
@@ -274,11 +420,19 @@ class IceStats {
 
 /// The full call report payload sent to voice-sdk-proxy
 class CallReportPayload {
+  /// Summary information describing the call.
   final CallSummary summary;
+
+  /// Ordered list of per-interval statistics collected during the call.
   final List<StatsInterval> stats;
+
+  /// Optional structured event log entries associated with the call.
   final List<Map<String, dynamic>>? logs;
+
+  /// Segment index used when the report is split across multiple uploads.
   final int? segment;
 
+  /// Creates a full call report payload for upload to voice-sdk-proxy.
   CallReportPayload({
     required this.summary,
     required this.stats,
@@ -286,6 +440,7 @@ class CallReportPayload {
     this.segment,
   });
 
+  /// Serializes this payload to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
         'summary': summary.toJson(),
         'stats': stats.map((s) => s.toJson()).toList(),
@@ -307,6 +462,7 @@ class CallReportPayload {
 /// - Intermediate segment flushing for long calls (~25 min)
 /// - Structured event log integration
 class CallReportCollector {
+  /// Configuration options controlling how stats are collected and uploaded.
   final CallReportOptions options;
   RTCPeerConnection? _peerConnection;
   Timer? _collectionTimer;
@@ -365,10 +521,41 @@ class CallReportCollector {
   // Cache of all candidates for lookup
   final Map<String, Map<String, dynamic>> _candidateCache = {};
 
+  /// Creates a collector and records the call start time.
   CallReportCollector({
     this.options = const CallReportOptions(),
     this.logCollector,
   }) : _callStartTime = DateTime.now();
+
+  /// Configure the global [LogCollector] for this call report.
+  /// Creates a new [LogCollector], sets it as the global singleton,
+  /// and starts capturing.
+  void configureLogCollector({
+    required bool enabled,
+    required CollectorLogLevel level,
+    required int maxEntries,
+  }) {
+    // Only create a new collector if one isn't already active.
+    final existing = getGlobalLogCollector();
+    if (existing != null && existing.isActive) {
+      return;
+    }
+    final collector = LogCollector(
+      enabled: enabled,
+      level: level,
+      maxEntries: maxEntries,
+    );
+    setGlobalLogCollector(collector);
+    collector.start();
+  }
+
+  /// Drain and return all log entries from the global [LogCollector].
+  /// Returns `null` if no collector is active.
+  List<Map<String, dynamic>>? getLogCollectorEntries() {
+    final collector = getGlobalLogCollector();
+    if (collector == null || !collector.isActive) return null;
+    return collector.drain();
+  }
 
   /// Start collecting stats from the peer connection
   void start(RTCPeerConnection peerConnection) {
@@ -416,8 +603,9 @@ class CallReportCollector {
     if (parsed == null) return;
 
     // Generate a unique ID for this candidate (similar to WebRTC stats ID format)
-    final candidateId = 'RTCIce${isLocal ? "Lc" : "Rc"}_${parsed['foundation']}_${parsed['port']}';
-    
+    final candidateId =
+        'RTCIce${isLocal ? "Lc" : "Rc"}_${parsed['foundation']}_${parsed['port']}';
+
     _candidateCache[candidateId] = {
       'id': candidateId,
       'address': parsed['address'],
@@ -485,7 +673,8 @@ class CallReportCollector {
         'relatedPort': relatedPort,
       };
     } catch (e) {
-      GlobalLogger().w('CallReportCollector: Failed to parse ICE candidate: $e');
+      GlobalLogger()
+          .w('CallReportCollector: Failed to parse ICE candidate: $e');
       return null;
     }
   }
@@ -500,7 +689,7 @@ class CallReportCollector {
     try {
       final lines = sdp.split('\n');
       int candidateCount = 0;
-      
+
       for (final line in lines) {
         final trimmed = line.trim();
         if (trimmed.startsWith('a=candidate:')) {
@@ -513,14 +702,15 @@ class CallReportCollector {
           candidateCount++;
         }
       }
-      
+
       if (candidateCount > 0) {
         GlobalLogger().d(
           'CallReportCollector: Extracted $candidateCount ${isLocal ? "local" : "remote"} candidates from SDP',
         );
       }
     } catch (e) {
-      GlobalLogger().w('CallReportCollector: Failed to parse SDP for candidates: $e');
+      GlobalLogger()
+          .w('CallReportCollector: Failed to parse SDP for candidates: $e');
     }
   }
 
@@ -674,7 +864,9 @@ class CallReportCollector {
         );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          GlobalLogger().i('CallReportCollector: Successfully posted report for call: ${headers['x-call-id']}');
+          GlobalLogger().i(
+            'CallReportCollector: Successfully posted report for call: ${headers['x-call-id']}',
+          );
           return;
         } else if (response.statusCode >= 400 && response.statusCode < 500) {
           // Client error - don't retry
@@ -737,8 +929,9 @@ class CallReportCollector {
 
     int chunkSegment = _segmentCounter;
     for (int i = 0; i < stats.length; i += entriesPerChunk) {
-      final end =
-          (i + entriesPerChunk > stats.length) ? stats.length : i + entriesPerChunk;
+      final end = (i + entriesPerChunk > stats.length)
+          ? stats.length
+          : i + entriesPerChunk;
       final chunk = stats.sublist(i, end);
 
       // Only include logs in the first chunk
@@ -852,13 +1045,13 @@ class CallReportCollector {
             }
             break;
           case 'candidate-pair':
-            if (values['nominated'] == true ||
-                values['state'] == 'succeeded') {
+            if (values['nominated'] == true || values['state'] == 'succeeded') {
               _lastCandidatePair = values;
               _processCandidatePair(values);
               // Store candidate IDs for lookup
               _selectedLocalCandidateId = values['localCandidateId'] as String?;
-              _selectedRemoteCandidateId = values['remoteCandidateId'] as String?;
+              _selectedRemoteCandidateId =
+                  values['remoteCandidateId'] as String?;
             }
             break;
           case 'local-candidate':
@@ -998,17 +1191,22 @@ class CallReportCollector {
 
     if (_lastInboundAudio != null) {
       inbound = InboundAudioStats(
-        packetsReceived: (_lastInboundAudio!['packetsReceived'] as num?)?.toInt(),
+        packetsReceived:
+            (_lastInboundAudio!['packetsReceived'] as num?)?.toInt(),
         bytesReceived: (_lastInboundAudio!['bytesReceived'] as num?)?.toInt(),
         packetsLost: (_lastInboundAudio!['packetsLost'] as num?)?.toInt(),
-        packetsDiscarded: (_lastInboundAudio!['packetsDiscarded'] as num?)?.toInt(),
-        jitterBufferDelay: (_lastInboundAudio!['jitterBufferDelay'] as num?)?.toDouble(),
+        packetsDiscarded:
+            (_lastInboundAudio!['packetsDiscarded'] as num?)?.toInt(),
+        jitterBufferDelay:
+            (_lastInboundAudio!['jitterBufferDelay'] as num?)?.toDouble(),
         jitterBufferEmittedCount:
             (_lastInboundAudio!['jitterBufferEmittedCount'] as num?)?.toInt(),
         totalSamplesReceived:
             (_lastInboundAudio!['totalSamplesReceived'] as num?)?.toInt(),
-        concealedSamples: (_lastInboundAudio!['concealedSamples'] as num?)?.toInt(),
-        concealmentEvents: (_lastInboundAudio!['concealmentEvents'] as num?)?.toInt(),
+        concealedSamples:
+            (_lastInboundAudio!['concealedSamples'] as num?)?.toInt(),
+        concealmentEvents:
+            (_lastInboundAudio!['concealmentEvents'] as num?)?.toInt(),
         audioLevelAvg: _average(_intervalInboundAudioLevels),
         jitterAvg: _average(_intervalJitters),
         bitrateAvg: _average(_intervalInboundBitrates),
@@ -1030,7 +1228,8 @@ class CallReportCollector {
     return ConnectionStats(
       roundTripTimeAvg: _average(_intervalRTTs),
       packetsSent: (_lastCandidatePair!['packetsSent'] as num?)?.toInt(),
-      packetsReceived: (_lastCandidatePair!['packetsReceived'] as num?)?.toInt(),
+      packetsReceived:
+          (_lastCandidatePair!['packetsReceived'] as num?)?.toInt(),
       bytesSent: (_lastCandidatePair!['bytesSent'] as num?)?.toInt(),
       bytesReceived: (_lastCandidatePair!['bytesReceived'] as num?)?.toInt(),
     );
@@ -1049,13 +1248,13 @@ class CallReportCollector {
     // Try to find local candidate - first by ID, then by searching cache
     IceCandidateStats? localCandidate;
     Map<String, dynamic>? localData;
-    
+
     // Method 1: Direct ID lookup (works on some platforms)
     if (_selectedLocalCandidateId != null &&
         _candidateCache.containsKey(_selectedLocalCandidateId)) {
       localData = _candidateCache[_selectedLocalCandidateId];
     }
-    
+
     // Method 2: Search cache for a local candidate (any will do for basic info)
     // Since we mark local candidates with 'RTCIceLc_' prefix
     if (localData == null) {
@@ -1069,7 +1268,7 @@ class CallReportCollector {
         }
       }
     }
-    
+
     if (localData != null) {
       localCandidate = IceCandidateStats(
         address: localData['address'] as String? ?? localData['ip'] as String?,
@@ -1090,13 +1289,13 @@ class CallReportCollector {
     // Try to find remote candidate - first by ID, then by searching cache
     IceCandidateStats? remoteCandidate;
     Map<String, dynamic>? remoteData;
-    
+
     // Method 1: Direct ID lookup
     if (_selectedRemoteCandidateId != null &&
         _candidateCache.containsKey(_selectedRemoteCandidateId)) {
       remoteData = _candidateCache[_selectedRemoteCandidateId];
     }
-    
+
     // Method 2: Search cache for a remote candidate
     if (remoteData == null) {
       for (final entry in _candidateCache.entries) {
@@ -1109,10 +1308,11 @@ class CallReportCollector {
         }
       }
     }
-    
+
     if (remoteData != null) {
       remoteCandidate = IceCandidateStats(
-        address: remoteData['address'] as String? ?? remoteData['ip'] as String?,
+        address:
+            remoteData['address'] as String? ?? remoteData['ip'] as String?,
         candidateType: remoteData['candidateType'] as String?,
         networkType: remoteData['networkType'] as String?,
         port: (remoteData['port'] as num?)?.toInt(),
@@ -1133,7 +1333,8 @@ class CallReportCollector {
       remote: remoteCandidate,
       nominated: _lastCandidatePair!['nominated'] as bool?,
       requestsSent: (_lastCandidatePair!['requestsSent'] as num?)?.toInt(),
-      responsesReceived: (_lastCandidatePair!['responsesReceived'] as num?)?.toInt(),
+      responsesReceived:
+          (_lastCandidatePair!['responsesReceived'] as num?)?.toInt(),
       state: _lastCandidatePair!['state'] as String?,
       writable: _lastCandidatePair!['writable'] as bool?,
     );
